@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  ledfx:
+    image: ledfxorg/ledfx:latest
+    container_name: ledfx-mcp-test
+    ports:
+      - "8888:8888"
+    volumes:
+      - ledfx-config:/root/.ledfx
+    environment:
+      - LEDFX_HOST=0.0.0.0
+      - LEDFX_PORT=8888
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/api/info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ledfx-network
+
+volumes:
+  ledfx-config:
+    driver: local
+
+networks:
+  ledfx-network:
+    driver: bridge

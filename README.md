@@ -35,11 +35,51 @@ This project follows principles from:
 - **Information Hiding**: Implementation details abstracted from callers
 - **Minimize Complexity**: Each module has a single, focused responsibility
 
+## ⚠️ Implementation Status
+
+**Current Status:** Specification Phase
+
+The initial implementation has been created based on preliminary LedFX API understanding. However, **detailed API specifications, test plans, and reference documentation have now been created** based on the official LedFX 2.1.2 API.
+
+### Important Notes
+
+1. **API Gaps Identified:** The current implementation has critical issues (see `docs/IMPLEMENTATION_NOTES.md`)
+2. **Testing Required:** Code has not yet been tested against a real LedFX instance
+3. **Documentation Complete:** Comprehensive specifications are available in the `docs/` directory
+
+### Documentation
+
+- **[API Specification](docs/API_SPECIFICATION.md)** - Complete LedFX API reference
+- **[Test Specification](docs/TEST_SPECIFICATION.md)** - Comprehensive test plans
+- **[Implementation Notes](docs/IMPLEMENTATION_NOTES.md)** - Known issues and required fixes
+- **[References](docs/REFERENCES.md)** - LedFX resources and links
+
+**Next Steps:** Implementation updates will be made based on these specifications.
+
 ## Prerequisites
 
 - Node.js >= 18.0.0
 - A running [LedFX](https://ledfx.app/) instance (default: `localhost:8888`)
 - An MCP-compatible AI assistant (e.g., Claude Desktop)
+
+### Running LedFX for Testing
+
+**Using Docker (Recommended):**
+```bash
+# Using docker-compose (included in this repository)
+docker-compose up -d
+
+# Or using docker run
+docker run -d --name ledfx -p 8888:8888 ledfxorg/ledfx:latest
+```
+
+**Using pip:**
+```bash
+pip install ledfx
+ledfx --host 0.0.0.0 --port 8888
+```
+
+See [REFERENCES.md](docs/REFERENCES.md) for detailed installation instructions.
 
 ## Installation
 
@@ -139,11 +179,65 @@ ledfx-mcp/
 │   ├── index.ts         # Main server entry point
 │   ├── ledfx-client.ts  # LedFX API client
 │   └── tools.ts         # MCP tool definitions and handlers
+├── docs/                # Comprehensive documentation
+│   ├── API_SPECIFICATION.md      # LedFX API reference
+│   ├── TEST_SPECIFICATION.md     # Test plans and requirements
+│   ├── IMPLEMENTATION_NOTES.md   # Known issues and fixes needed
+│   └── REFERENCES.md             # LedFX resources and links
 ├── dist/                # Compiled JavaScript (generated)
+├── docker-compose.yml   # Docker setup for testing
 ├── package.json         # Project configuration
 ├── tsconfig.json        # TypeScript configuration
 └── README.md           # This file
 ```
+
+## Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+### API Specification
+**[docs/API_SPECIFICATION.md](docs/API_SPECIFICATION.md)**
+
+Complete reference for LedFX REST API endpoints based on version 2.1.2:
+- All endpoint paths, methods, and parameters
+- Request/response examples
+- Error handling patterns
+- Effect types and configuration options
+- WebSocket endpoints
+- Version compatibility notes
+
+### Test Specification
+**[docs/TEST_SPECIFICATION.md](docs/TEST_SPECIFICATION.md)**
+
+Comprehensive test requirements and test cases:
+- Unit test cases for all components
+- Integration test scenarios
+- End-to-end workflows
+- Performance test criteria
+- Compatibility test matrix
+- Mock strategies and test fixtures
+- Docker-based test environment setup
+
+### Implementation Notes
+**[docs/IMPLEMENTATION_NOTES.md](docs/IMPLEMENTATION_NOTES.md)**
+
+Critical analysis of current implementation vs actual API:
+- **Known issues and bugs** (devices vs virtuals confusion)
+- Required fixes before production use
+- Missing features and functionality gaps
+- Recommended implementation phases
+- Migration path for future versions
+
+### References
+**[docs/REFERENCES.md](docs/REFERENCES.md)**
+
+Complete resource guide:
+- Official LedFX documentation links
+- Installation methods (Docker, pip, source)
+- API testing examples (curl, Python, JavaScript)
+- Community resources and support channels
+- Hardware recommendations
+- Security best practices
 
 ## Architecture
 
