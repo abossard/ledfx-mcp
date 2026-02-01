@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ledfx": {
+      "command": "node",
+      "args": ["/absolute/path/to/ledfx-mcp/dist/index.js"],
+      "env": {
+        "LEDFX_HOST": "localhost",
+        "LEDFX_PORT": "8888"
+      }
+    }
+  }
+}
