@@ -21,7 +21,9 @@
   "author": "Andreas Bossard",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4"
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.6.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

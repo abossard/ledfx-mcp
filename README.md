@@ -15,11 +15,18 @@ This MCP server provides a bridge between AI assistants (like Claude) and LedFX,
 ## Features
 
 - 🎨 Control LED effects through natural language
-- 🔧 Manage multiple LED devices
+- 🔧 Manage multiple LED devices and virtuals
 - 🎭 Activate pre-configured scenes
 - 📊 Query device and system information
 - 🔒 Type-safe TypeScript implementation
 - 🏗️ Built following software design best practices
+- 🎨 **Comprehensive color library** with 50+ named colors and gradients
+- 🗄️ **Palette management** with local SQLite database
+- 🤖 **AI-powered scene creation** from natural language descriptions
+- 📝 **Playlist support** for scene sequences
+- 💡 **Effect recommendations** based on mood and description
+- 📚 **LedFX feature explanations** - learn about any LedFX concept
+- 🔄 **Correct API implementation** - uses virtuals (not devices) for effects
 
 ## Design Principles
 
@@ -132,25 +139,111 @@ Add the following to your Claude Desktop configuration file:
 
 Once configured, you can interact with your LedFX setup through natural language:
 
-- "List all my LED devices"
-- "Apply a rainbow effect to my desk light"
-- "Activate my party scene"
-- "What effects are currently running?"
-- "Clear all effects from device XYZ"
+**Basic Operations:**
+- "List all my LED virtuals"
+- "Activate the rainbow effect on my desk light virtual"
+- "Show me all available scenes"
+- "Clear effects from all virtuals"
+
+**Natural Language Scene Creation:**
+- "Create a calm ocean scene with slow blue waves"
+- "Make an energetic party scene with fast rainbow colors"
+- "Create a romantic scene with dim pink and purple gradients"
+- "Build a focus scene with steady white light at medium brightness"
+
+**Color and Palette Management:**
+- "Show me all neon colors"
+- "Find the crimson color"
+- "List all available gradients"
+- "Create a new palette called 'Sunset Vibes' with orange, pink, and purple"
+- "Save a playlist of my party scenes"
+
+**Effect Recommendations:**
+- "Recommend effects for a relaxing evening"
+- "What effects work well with music?"
+- "Suggest something energetic for a party"
+
+**Learning LedFX:**
+- "Explain what virtuals are in LedFX"
+- "What's the difference between devices and virtuals?"
+- "How do audio-reactive effects work?"
+- "Tell me about WLED devices"
+- "List all available effect types"
 
 ## Available Tools
 
-The server exposes the following MCP tools:
+The server exposes 40+ MCP tools organized into categories:
 
+### Core Management
 | Tool | Description |
 |------|-------------|
 | `ledfx_get_info` | Get LedFX server information |
-| `ledfx_list_devices` | List all configured LED devices |
+| `ledfx_list_devices` | List all physical LED devices |
 | `ledfx_get_device` | Get details about a specific device |
-| `ledfx_set_effect` | Apply an effect to a device |
-| `ledfx_clear_effect` | Remove effects from a device |
+| `ledfx_list_virtuals` | List all virtual LED strips |
+| `ledfx_get_virtual` | Get details about a specific virtual |
+| `ledfx_activate_virtual` | Activate/deactivate a virtual |
+
+### Effect Control (CORRECTED - uses virtuals)
+| Tool | Description |
+|------|-------------|
+| `ledfx_set_effect` | Apply an effect to a **virtual** (not device) |
+| `ledfx_update_effect` | Update effect configuration |
+| `ledfx_clear_effect` | Remove effects from a virtual |
+| `ledfx_get_effect_schemas` | Get schemas for all effect types |
+
+### Scene Management
+| Tool | Description |
+|------|-------------|
 | `ledfx_list_scenes` | List all available scenes |
 | `ledfx_activate_scene` | Activate a pre-configured scene |
+| `ledfx_create_scene` | Create new scene from current config |
+| `ledfx_delete_scene` | Delete a saved scene |
+| `ledfx_create_scene_from_description` | **AI-powered scene creation from natural language** |
+
+### Palette Management (SQLite-backed)
+| Tool | Description |
+|------|-------------|
+| `ledfx_list_palettes` | List all saved palettes |
+| `ledfx_create_palette` | Create a new color palette |
+| `ledfx_get_palette` | Get specific palette |
+| `ledfx_delete_palette` | Delete a palette |
+
+### Playlist Management
+| Tool | Description |
+|------|-------------|
+| `ledfx_list_playlists` | List all playlists |
+| `ledfx_create_playlist` | Create scene sequence playlist |
+| `ledfx_get_playlist` | Get specific playlist |
+| `ledfx_delete_playlist` | Delete a playlist |
+
+### Color Library
+| Tool | Description |
+|------|-------------|
+| `ledfx_list_colors` | List 50+ named colors by category |
+| `ledfx_find_color` | Find color by name |
+| `ledfx_list_gradients` | List predefined gradients |
+| `ledfx_find_gradient` | Find gradient by name |
+
+### AI Features
+| Tool | Description |
+|------|-------------|
+| `ledfx_recommend_effects` | Get effect recommendations based on mood/description |
+| `ledfx_explain_feature` | Get detailed explanation of any LedFX feature |
+| `ledfx_list_features` | List all explainable features |
+| `ledfx_list_effect_types` | List all effect types with descriptions |
+
+### Preset Management
+| Tool | Description |
+|------|-------------|
+| `ledfx_get_presets` | Get presets for a virtual's effect |
+| `ledfx_apply_preset` | Apply a preset to a virtual |
+
+### Audio Management
+| Tool | Description |
+|------|-------------|
+| `ledfx_list_audio_devices` | List audio input devices |
+| `ledfx_set_audio_device` | Set active audio device |
 
 ## Development
 
