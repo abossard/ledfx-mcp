@@ -273,15 +273,29 @@ export function createGradient(colors: string[], steps: number): string[] {
   }
   
   const gradient: string[] = [];
-  const stepsPerSection = Math.floor(steps / (colors.length - 1));
-  
-  for (let i = 0; i < colors.length - 1; i++) {
-    for (let j = 0; j < stepsPerSection; j++) {
-      const ratio = j / stepsPerSection;
+  const sectionCount = colors.length - 1;
+
+  // If steps is not positive, fall back to a minimal gradient of endpoints
+  if (steps <= 0) {
+    gradient.push(colors[0], colors[colors.length - 1]);
+    return gradient;
+  }
+
+  // Ensure we have at least one step per section to avoid division by zero
+  const totalSteps = Math.max(steps, sectionCount);
+  const baseStepsPerSection = Math.floor(totalSteps / sectionCount);
+  const remainder = totalSteps % sectionCount;
+
+  for (let i = 0; i < sectionCount; i++) {
+    const sectionSteps = baseStepsPerSection + (i < remainder ? 1 : 0);
+
+    // sectionSteps is guaranteed to be at least 1, so this division is safe
+    for (let j = 0; j < sectionSteps; j++) {
+      const ratio = j / sectionSteps;
       gradient.push(blendColors(colors[i], colors[i + 1], ratio));
     }
   }
-  
+
   gradient.push(colors[colors.length - 1]);
   return gradient;
 }

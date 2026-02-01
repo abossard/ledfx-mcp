@@ -16,7 +16,7 @@
                              ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Tools Layer (tools.ts)                       │
-│                         40+ MCP Tools                               │
+│                         35 MCP Tools                                │
 │  ┌──────────────┬──────────────┬──────────────┬──────────────┐    │
 │  │   Virtuals   │   Effects    │   Scenes     │   Palettes   │    │
 │  │   Presets    │   Playlists  │   Colors     │   AI Help    │    │
@@ -137,7 +137,7 @@ Returns:
 - Register tool handlers
 
 ### tools.ts (Tool Layer)
-- Define 40+ MCP tools
+- Define 35 MCP tools
 - Route tool calls to appropriate modules
 - Format responses for MCP protocol
 - Error handling

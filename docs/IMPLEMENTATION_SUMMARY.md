@@ -127,7 +127,7 @@ Recommendations:
 - Party mode rotations
 - Work focus sequences
 
-### 8. **40+ MCP Tools** ✅
+### 8. **35 MCP Tools** ✅
 
 **Tool Categories:**
 
@@ -196,7 +196,7 @@ Recommendations:
 src/
 ├── index.ts           # MCP server entry point
 ├── ledfx-client.ts    # LedFX API client (corrected endpoints)
-├── tools.ts           # 40+ MCP tool definitions
+├── tools.ts           # 35 MCP tool definitions
 ├── colors.ts          # Color & gradient library
 ├── database.ts        # SQLite palette management
 └── ai-helper.ts       # NLP & recommendations
@@ -468,7 +468,7 @@ MCP: "Virtuals are logical LED strips that can span one or more
 
 ### Feature Completeness
 
-- ✅ 40+ MCP tools (exceeded goal)
+- ✅ 35 MCP tools implemented
 - ✅ Natural language parsing (working)
 - ✅ Palette management (SQLite-backed)
 - ✅ Effect recommendations (AI-powered)

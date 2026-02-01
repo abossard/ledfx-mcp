@@ -414,7 +414,12 @@ let dbInstance: PaletteDatabase | null = null;
 
 export function getDatabase(): PaletteDatabase {
   if (!dbInstance) {
-    dbInstance = new PaletteDatabase();
+    // Use in-memory database for tests, persistent for production
+    const dbPath = process.env.NODE_ENV === 'test' || process.env.LEDFX_MCP_DB_PATH === ':memory:'
+      ? ':memory:'
+      : process.env.LEDFX_MCP_DB_PATH || undefined;
+    
+    dbInstance = new PaletteDatabase(dbPath);
   }
   return dbInstance;
 }

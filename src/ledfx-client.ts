@@ -91,13 +91,29 @@ export class LedFxClient {
       });
 
       if (!response.ok) {
+        // Include status and body in API error
+        let errorBody = "";
+        try {
+          const jsonError = await response.json();
+          errorBody = JSON.stringify(jsonError);
+        } catch {
+          errorBody = await response.text().catch(() => "");
+        }
+        
         throw new Error(
-          `LedFX API error: ${response.status} ${response.statusText}`
+          `LedFX API error: ${response.status} ${response.statusText}${
+            errorBody ? ` - ${errorBody}` : ""
+          }`
         );
       }
 
       return (await response.json()) as T;
     } catch (error) {
+      // Only wrap network/connection errors, not API errors
+      if (error instanceof Error && error.message.startsWith("LedFX API error:")) {
+        throw error; // Re-throw API errors as-is
+      }
+      
       throw new Error(
         `Failed to connect to LedFX at ${url}: ${
           error instanceof Error ? error.message : String(error)
