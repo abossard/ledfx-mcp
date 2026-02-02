@@ -247,7 +247,7 @@ With comprehensive tests and CI pipeline in place:
 
 1. ✅ All features are validated
 2. ✅ Regressions will be caught automatically
-3. ✅ Multi-version Node.js support verified
+3. ✅ Node.js 24/25 support verified
 4. ✅ Integration with LedFX tested in CI
 5. ✅ Installation process documented
 

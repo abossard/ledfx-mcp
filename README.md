@@ -70,7 +70,7 @@ This MCP server is fully implemented against the official LedFX 2.1.2 API and va
 
 ## Prerequisites
 
-- Node.js >= 18.0.0
+- Node.js 24 or 25
 - A running [LedFX](https://ledfx.app/) instance (default: `localhost:8888`)
 - An MCP-compatible AI assistant (e.g., Claude Desktop)
 
@@ -103,8 +103,9 @@ cd ledfx-mcp
 # Install dependencies
 npm install
 
-# Build the project
-npm run build
+# Build and run in one command
+npm run dev
+
 ```
 
 ## Configuration
@@ -122,6 +123,10 @@ You can set these in your MCP client configuration or as environment variables.
 
 Add the following to your Claude Desktop configuration file:
 
+- Claude Desktop launches this MCP server over stdio.
+- Use Node.js 24 or 25.
+- The path must be absolute when using `node` with `dist/index.js`.
+
 **MacOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
 
@@ -131,6 +136,23 @@ Add the following to your Claude Desktop configuration file:
     "ledfx": {
       "command": "node",
       "args": ["/absolute/path/to/ledfx-mcp/dist/index.js"],
+      "env": {
+        "LEDFX_HOST": "localhost",
+        "LEDFX_PORT": "8888"
+      }
+    }
+  }
+}
+```
+
+If you prefer to run from Git without a local build, use `npx` as the command:
+
+```json
+{
+  "mcpServers": {
+    "ledfx": {
+      "command": "npx",
+      "args": ["github:abossard/ledfx-mcp"],
       "env": {
         "LEDFX_HOST": "localhost",
         "LEDFX_PORT": "8888"
@@ -259,8 +281,14 @@ npm install
 # Build the project
 npm run build
 
+# Build and run in one command
+npm run dev
+
 # Watch mode for development
 npm run watch
+
+# Build and run in one command
+npm run dev
 
 # Lint the code
 npm run lint

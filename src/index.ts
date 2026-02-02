@@ -23,6 +23,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { createLedFxClient } from "./ledfx-client.js";
 import { tools, handleToolCall } from "./tools.js";
+import logger from "./logger.js";
 
 /**
  * Creates and configures the MCP server instance
@@ -61,24 +62,37 @@ function createServer(): Server {
  */
 async function main(): Promise<void> {
   try {
+    logger.lifecycle("Starting LedFX MCP server", {
+      version: "0.1.0",
+      nodeVersion: process.version,
+      logLevel: process.env.LEDFX_LOG_LEVEL || "info",
+    });
+
     // Create server instance
     const server = createServer();
+    logger.lifecycle("MCP server instance created");
 
     // Initialize LedFX client (shared state)
+    const ledfxHost = process.env.LEDFX_HOST || "localhost";
+    const ledfxPort = process.env.LEDFX_PORT || "8888";
     const ledfxClient = createLedFxClient();
     
     // Make client available to tools (injected dependency)
     (global as any).ledfxClient = ledfxClient;
+    logger.lifecycle("LedFX client initialized", { host: ledfxHost, port: ledfxPort });
 
     // Create stdio transport for communication
     const transport = new StdioServerTransport();
+    logger.lifecycle("Stdio transport created");
     
     // Connect server to transport
     await server.connect(transport);
+    logger.lifecycle("Server connected to transport - ready for tool calls");
 
     // Log startup (stderr to not interfere with stdio protocol)
     console.error("LedFX MCP server running on stdio");
   } catch (error) {
+    logger.error("Fatal error starting server", error);
     console.error("Fatal error starting server:", error);
     process.exit(1);
   }

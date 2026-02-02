@@ -446,9 +446,7 @@ MCP: "Virtuals are logical LED strips that can span one or more
 
 ### Node.js Versions
 
-- ✅ Minimum: 18.0.0
-- ✅ Tested: 20.x
-- ✅ Recommended: 20.x or 22.x
+- ✅ Supported: 24.x or 25.x
 
 ### Operating Systems
 

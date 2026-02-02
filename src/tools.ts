@@ -15,6 +15,20 @@ import { LedFxClient } from "./ledfx-client.js";
 import { getDatabase } from "./database.js";
 import { findColor, findGradient, NAMED_COLORS, GRADIENTS, getColorCategories, getGradientCategories } from "./colors.js";
 import { parseSceneDescription, recommendEffects, explainFeature, getFeatureCategories, EFFECT_TYPES } from "./ai-helper.js";
+import logger from "./logger.js";
+
+// ========== Effect Types for Theme Application ==========
+const THEME_EFFECT_TYPES = [
+  "energy",
+  "wavelength",
+  "pulse",
+  "scroll",
+  "strobe",
+  "real_strobe",
+  "singleColor",
+  "gradient",
+  "blade_power_plus",
+];
 
 /**
  * Comprehensive tool definitions
@@ -208,6 +222,24 @@ export const tools: Tool[] = [
       required: ["virtual_id", "category", "effect_id", "preset_id"],
     },
   },
+  {
+    name: "ledfx_save_preset",
+    description: "Save the current effect configuration on a virtual as a user preset",
+    inputSchema: {
+      type: "object",
+      properties: {
+        virtual_id: {
+          type: "string",
+          description: "The unique identifier of the virtual",
+        },
+        preset_name: {
+          type: "string",
+          description: "Name for the new preset",
+        },
+      },
+      required: ["virtual_id", "preset_name"],
+    },
+  },
 
   // ========== Scene Management (CORRECTED) ==========
   {
@@ -358,10 +390,56 @@ export const tools: Tool[] = [
     },
   },
 
-  // ========== Playlist Management ==========
+  // ========== Playlist Management (LedFX Native) ==========
   {
     name: "ledfx_list_playlists",
-    description: "List all saved playlists (sequences of scenes)",
+    description: "List all playlists stored in LedFX",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "ledfx_get_playlist",
+    description: "Get a specific LedFX playlist by ID",
+    inputSchema: {
+      type: "object",
+      properties: {
+        playlist_id: {
+          type: "string",
+          description: "Playlist ID (e.g., 'jungle', 'standby')",
+        },
+      },
+      required: ["playlist_id"],
+    },
+  },
+  {
+    name: "ledfx_start_playlist",
+    description: "Start playing a LedFX playlist",
+    inputSchema: {
+      type: "object",
+      properties: {
+        playlist_id: {
+          type: "string",
+          description: "Playlist ID to start",
+        },
+      },
+      required: ["playlist_id"],
+    },
+  },
+  {
+    name: "ledfx_stop_playlist",
+    description: "Stop the currently playing LedFX playlist",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "ledfx_get_playlist_status",
+    description: "Get the status of the currently playing LedFX playlist",
     inputSchema: {
       type: "object",
       properties: {},
@@ -370,44 +448,63 @@ export const tools: Tool[] = [
   },
   {
     name: "ledfx_create_playlist",
-    description: "Create a new playlist of scenes",
+    description: "Create a new LedFX playlist with scenes",
     inputSchema: {
       type: "object",
       properties: {
+        id: {
+          type: "string",
+          description: "Unique playlist ID (lowercase, no spaces)",
+        },
         name: {
           type: "string",
-          description: "Name for the playlist",
+          description: "Display name for the playlist",
         },
         scene_ids: {
           type: "array",
           items: { type: "string" },
-          description: "Array of scene IDs in playback order",
+          description: "Array of scene IDs to include in the playlist",
         },
-        transition_time: {
-          type: "number",
-          description: "Seconds to display each scene (default: 5)",
-        },
-        loop: {
-          type: "boolean",
-          description: "Whether to loop the playlist (default: true)",
-        },
-        description: {
+        mode: {
           type: "string",
-          description: "Optional description",
+          enum: ["sequence", "shuffle"],
+          description: "Playback mode: 'sequence' or 'shuffle' (default: sequence)",
+        },
+        duration_ms: {
+          type: "number",
+          description: "Duration per scene in milliseconds (default: 15000)",
         },
       },
-      required: ["name", "scene_ids"],
+      required: ["id", "name", "scene_ids"],
     },
   },
   {
-    name: "ledfx_get_playlist",
-    description: "Get a specific playlist",
+    name: "ledfx_update_playlist",
+    description: "Update an existing LedFX playlist",
     inputSchema: {
       type: "object",
       properties: {
         playlist_id: {
+          type: "string",
+          description: "Playlist ID to update",
+        },
+        name: {
+          type: "string",
+          description: "New display name",
+        },
+        scene_ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "New array of scene IDs",
+        },
+        mode: {
+          type: "string",
+          enum: ["sequence", "shuffle"],
+          description: "Playback mode",
+        },
+        duration_ms: {
           type: "number",
-          description: "Playlist ID",
+          description: "Duration per scene in milliseconds",
         },
       },
       required: ["playlist_id"],
@@ -415,16 +512,109 @@ export const tools: Tool[] = [
   },
   {
     name: "ledfx_delete_playlist",
-    description: "Delete a playlist",
+    description: "Delete a LedFX playlist",
     inputSchema: {
       type: "object",
       properties: {
         playlist_id: {
-          type: "number",
-          description: "Playlist ID",
+          type: "string",
+          description: "Playlist ID to delete",
         },
       },
       required: ["playlist_id"],
+    },
+  },
+  {
+    name: "ledfx_add_scene_to_playlist",
+    description: "Add a scene to an existing playlist",
+    inputSchema: {
+      type: "object",
+      properties: {
+        playlist_id: {
+          type: "string",
+          description: "Playlist ID",
+        },
+        scene_id: {
+          type: "string",
+          description: "Scene ID to add",
+        },
+        duration_ms: {
+          type: "number",
+          description: "Duration for this scene in milliseconds (optional)",
+        },
+      },
+      required: ["playlist_id", "scene_id"],
+    },
+  },
+
+  // ========== Batch Operations ==========
+  {
+    name: "ledfx_create_theme",
+    description: "Create a color theme that can be applied across multiple effects at once. Stores colors for lows/mids/highs and optional custom gradient.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Theme name",
+        },
+        color_lows: {
+          type: "string",
+          description: "Hex color for bass/low frequencies",
+        },
+        color_mids: {
+          type: "string",
+          description: "Hex color for mid frequencies",
+        },
+        color_high: {
+          type: "string",
+          description: "Hex color for high frequencies",
+        },
+        background_color: {
+          type: "string",
+          description: "Background color",
+        },
+        gradient: {
+          type: "string",
+          description: "Custom CSS gradient string (e.g., 'linear-gradient(90deg, #9900FF 0%, #00AA00 15%, #00AA00 85%, #FFFF00 100%)'). If not provided, auto-generated from colors.",
+        },
+        description: {
+          type: "string",
+          description: "Optional description",
+        },
+      },
+      required: ["name", "color_lows", "color_mids", "color_high"],
+    },
+  },
+  {
+    name: "ledfx_apply_theme",
+    description: "Apply a theme to create presets for ALL effect types and optionally create scenes for each",
+    inputSchema: {
+      type: "object",
+      properties: {
+        theme_name: {
+          type: "string",
+          description: "Name of theme to apply",
+        },
+        virtual_id: {
+          type: "string",
+          description: "Virtual to use for creating presets",
+        },
+        create_scenes: {
+          type: "boolean",
+          description: "Also create scenes for each effect (default: true)",
+        },
+      },
+      required: ["theme_name", "virtual_id"],
+    },
+  },
+  {
+    name: "ledfx_list_themes",
+    description: "List all saved color themes",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
     },
   },
 
@@ -600,6 +790,10 @@ export async function handleToolCall(
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
   const client = getClient();
   const db = getDatabase();
+  const startTime = Date.now();
+
+  // Log incoming tool call
+  logger.toolCall(name, args);
 
   try {
     switch (name) {
@@ -689,6 +883,14 @@ export async function handleToolCall(
         return formatResponse({
           success: true,
           message: `Preset '${args.preset_id}' applied to virtual '${args.virtual_id}'`,
+        });
+      }
+
+      case "ledfx_save_preset": {
+        await client.savePreset(args.virtual_id, args.preset_name);
+        return formatResponse({
+          success: true,
+          message: `Preset '${args.preset_name}' saved for virtual '${args.virtual_id}'`,
         });
       }
 
@@ -798,40 +1000,159 @@ export async function handleToolCall(
         });
       }
 
-      // ========== Playlists ==========
+      // ========== Playlists (LedFX Native) ==========
       case "ledfx_list_playlists": {
-        const playlists = db.getAllPlaylists();
+        const playlists = await client.getPlaylists();
         return formatResponse(playlists);
       }
 
-      case "ledfx_create_playlist": {
-        const id = db.createPlaylist({
+      case "ledfx_get_playlist": {
+        const playlist = await client.getPlaylist(args.playlist_id);
+        return formatResponse(playlist);
+      }
+
+      case "ledfx_start_playlist": {
+        await client.startPlaylist(args.playlist_id);
+        return formatResponse({
+          success: true,
+          message: `Playlist '${args.playlist_id}' started`,
+        });
+      }
+
+      case "ledfx_stop_playlist": {
+        await client.stopPlaylist();
+        return formatResponse({
+          success: true,
+          message: "Playlist stopped",
+        });
+      }
+
+      case "ledfx_get_playlist_status": {
+        const status = await client.getPlaylistStatus();
+        return formatResponse(status);
+      }
+
+      // ========== Themes ==========
+      case "ledfx_create_theme": {
+        const id = db.createTheme({
           name: args.name,
-          scenes: JSON.stringify(args.scene_ids),
-          transition_time: args.transition_time,
-          loop: args.loop,
+          color_lows: args.color_lows,
+          color_mids: args.color_mids,
+          color_high: args.color_high,
+          background_color: args.background_color || "#000000",
+          gradient: args.gradient,
           description: args.description,
         });
         return formatResponse({
           success: true,
           id,
-          message: `Playlist '${args.name}' created`,
+          message: `Theme '${args.name}' created`,
         });
       }
 
-      case "ledfx_get_playlist": {
-        const playlist = db.getPlaylist(args.playlist_id);
-        if (!playlist) {
-          return formatResponse({ error: "Playlist not found" });
-        }
-        return formatResponse(playlist);
+      case "ledfx_list_themes": {
+        const themes = db.getAllThemes();
+        return formatResponse(themes);
       }
 
-      case "ledfx_delete_playlist": {
-        db.deletePlaylist(args.playlist_id);
+      case "ledfx_apply_theme": {
+        const theme = db.getThemeByName(args.theme_name);
+        if (!theme) {
+          return formatResponse({ error: `Theme '${args.theme_name}' not found` });
+        }
+
+        const virtualId = args.virtual_id;
+        const createScenes = args.create_scenes !== false;
+        const createdScenes: string[] = [];
+
+        // Use custom gradient if provided, otherwise build from theme colors
+        const gradient = theme.gradient || `linear-gradient(90deg, ${theme.color_lows} 0%, ${theme.color_mids} 50%, ${theme.color_high} 100%)`;
+
+        // Apply theme to each effect type and save preset
+        for (const effectType of THEME_EFFECT_TYPES) {
+          let config: Record<string, any> = {
+            background_color: theme.background_color,
+            blur: 1.5,
+            mirror: true,
+          };
+
+          // Effect-specific config
+          if (effectType === "energy" || effectType === "wavelength") {
+            config = {
+              ...config,
+              color_lows: theme.color_lows,
+              color_mids: theme.color_mids,
+              color_high: theme.color_high,
+              frequency_range: "Lows (beat+bass)",
+              sensitivity: 0.8,
+            };
+          } else if (effectType === "pulse") {
+            config = {
+              ...config,
+              color: theme.color_mids,
+              decay: 0.5,
+              sensitivity: 0.8,
+            };
+          } else if (effectType === "scroll" || effectType === "gradient") {
+            config = {
+              ...config,
+              gradient,
+              speed: 3,
+            };
+          } else if (effectType === "strobe" || effectType === "real_strobe") {
+            config = {
+              ...config,
+              gradient,
+              strobe_color: theme.color_high,
+              strobe_decay_rate: 0.5,
+            };
+          } else if (effectType === "singleColor") {
+            config = {
+              ...config,
+              color: theme.color_mids,
+              modulate: true,
+              modulation_effect: "sine",
+              modulation_speed: 0.5,
+            };
+          } else if (effectType === "blade_power_plus") {
+            config = {
+              ...config,
+              gradient,
+              frequency_range: "Lows (beat+bass)",
+              decay: 0.5,
+              background_brightness: 0.5,
+            };
+          }
+
+          // Set effect and save preset
+          await client.setVirtualEffect(virtualId, effectType, config);
+          await client.savePreset(virtualId, theme.name);
+
+          // Create scene if requested
+          if (createScenes) {
+            const sceneName = `${theme.name}-${effectType}`;
+            try {
+              await client.createScene(sceneName, `${theme.name},${effectType}`);
+              createdScenes.push(sceneName);
+            } catch {
+              // Scene might already exist, try to delete and recreate
+              try {
+                await client.deleteScene(sceneName);
+                await client.createScene(sceneName, `${theme.name},${effectType}`);
+                createdScenes.push(sceneName);
+              } catch {
+                // Ignore if scene operations fail
+              }
+            }
+          }
+        }
+
         return formatResponse({
           success: true,
-          message: `Playlist deleted`,
+          theme: theme.name,
+          presetsCreated: THEME_EFFECT_TYPES.length,
+          scenesCreated: createdScenes.length,
+          scenes: createdScenes,
         });
       }
 
@@ -905,9 +1226,14 @@ export async function handleToolCall(
         throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error) {
+    const durationMs = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    logger.toolResult(name, false, durationMs, errorMessage);
+    
     return formatResponse({
       error: true,
-      message: error instanceof Error ? error.message : String(error),
+      message: errorMessage,
     });
   }
 }

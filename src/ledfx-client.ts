@@ -11,6 +11,8 @@
  * - Clear separation between actions (HTTP calls) and calculations (data transformation)
  */
 
+import logger from "./logger.js";
+
 export interface LedFxConfig {
   host: string;
   port: number;
@@ -70,6 +72,7 @@ export class LedFxClient {
 
   constructor(config: LedFxConfig) {
     this.baseUrl = `http://${config.host}:${config.port}/api`;
+    logger.debug(`LedFX client initialized`, { baseUrl: this.baseUrl });
   }
 
   /**
@@ -80,6 +83,12 @@ export class LedFxClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+    const method = options.method || "GET";
+    const body = options.body ? JSON.parse(options.body as string) : undefined;
+    
+    // Log request
+    logger.httpRequest(method, endpoint, body);
+    const startTime = Date.now();
     
     try {
       const response = await fetch(url, {
@@ -89,6 +98,8 @@ export class LedFxClient {
           ...options.headers,
         },
       });
+
+      const durationMs = Date.now() - startTime;
 
       if (!response.ok) {
         // Include status and body in API error
@@ -100,6 +111,8 @@ export class LedFxClient {
           errorBody = await response.text().catch(() => "");
         }
         
+        logger.httpResponse(method, endpoint, response.status, durationMs, errorBody);
+        
         throw new Error(
           `LedFX API error: ${response.status} ${response.statusText}${
             errorBody ? ` - ${errorBody}` : ""
@@ -107,18 +120,25 @@ export class LedFxClient {
         );
       }
 
-      return (await response.json()) as T;
+      const data = (await response.json()) as T;
+      logger.httpResponse(method, endpoint, response.status, durationMs);
+      
+      return data;
     } catch (error) {
+      const durationMs = Date.now() - startTime;
+      
       // Only wrap network/connection errors, not API errors
       if (error instanceof Error && error.message.startsWith("LedFX API error:")) {
         throw error; // Re-throw API errors as-is
       }
       
-      throw new Error(
-        `Failed to connect to LedFX at ${url}: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      const errorMessage = `Failed to connect to LedFX at ${url}: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      
+      logger.error(`HTTP request failed`, { endpoint, error: errorMessage, durationMs });
+      
+      throw new Error(errorMessage);
     }
   }
 
@@ -246,6 +266,21 @@ export class LedFxClient {
   }
 
   /**
+   * Save current effect config as a user preset (action)
+   */
+  async savePreset(
+    virtualId: string,
+    presetName: string
+  ): Promise<void> {
+    await this.request(`/virtuals/${virtualId}/presets`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: presetName,
+      }),
+    });
+  }
+
+  /**
    * DEPRECATED: Use setVirtualEffect instead
    * @deprecated This method uses the wrong endpoint. Use setVirtualEffect.
    */
@@ -358,6 +393,132 @@ export class LedFxClient {
         audio_device: deviceIndex,
       }),
     });
+  }
+
+  // ========== LedFX Native Playlist Management ==========
+
+  /**
+   * Get all playlists from LedFX (action)
+   */
+  async getPlaylists(): Promise<Record<string, any>> {
+    const response = await this.request<{ playlists: Record<string, any> }>("/playlists");
+    return response.playlists || {};
+  }
+
+  /**
+   * Get a specific playlist (action)
+   */
+  async getPlaylist(playlistId: string): Promise<Record<string, any> | null> {
+    const playlists = await this.getPlaylists();
+    return playlists[playlistId] || null;
+  }
+
+  /**
+   * Start a playlist (action)
+   */
+  async startPlaylist(playlistId: string): Promise<void> {
+    await this.request("/playlists", {
+      method: "PUT",
+      body: JSON.stringify({
+        action: "start",
+        id: playlistId,
+      }),
+    });
+  }
+
+  /**
+   * Stop the active playlist (action)
+   */
+  async stopPlaylist(): Promise<void> {
+    await this.request("/playlists", {
+      method: "PUT",
+      body: JSON.stringify({
+        action: "stop",
+      }),
+    });
+  }
+
+  /**
+   * Get playlist playback status (action)
+   */
+  async getPlaylistStatus(): Promise<Record<string, any>> {
+    // LedFX doesn't have a dedicated status endpoint, but we can try to get info
+    const playlists = await this.getPlaylists();
+    return { playlists };
+  }
+
+  /**
+   * Create a new playlist (action)
+   */
+  async createPlaylist(
+    id: string,
+    name: string,
+    items: Array<{ scene_id: string; duration_ms?: number }>,
+    options?: {
+      mode?: "sequence" | "shuffle";
+      default_duration_ms?: number;
+    }
+  ): Promise<Record<string, any>> {
+    const response = await this.request<{ status: string; data: { playlist: Record<string, any> } }>("/playlists", {
+      method: "POST",
+      body: JSON.stringify({
+        id,
+        name,
+        items,
+        mode: options?.mode || "sequence",
+        default_duration_ms: options?.default_duration_ms || 15000,
+      }),
+    });
+    return response.data?.playlist || {};
+  }
+
+  /**
+   * Update an existing playlist (action)
+   */
+  async updatePlaylist(
+    id: string,
+    updates: {
+      name?: string;
+      items?: Array<{ scene_id: string; duration_ms?: number }>;
+      mode?: "sequence" | "shuffle";
+      default_duration_ms?: number;
+    }
+  ): Promise<void> {
+    await this.request("/playlists", {
+      method: "PUT",
+      body: JSON.stringify({
+        action: "update",
+        id,
+        ...updates,
+      }),
+    });
+  }
+
+  /**
+   * Delete a playlist (action)
+   */
+  async deletePlaylist(playlistId: string): Promise<void> {
+    await this.request("/playlists", {
+      method: "DELETE",
+      body: JSON.stringify({
+        id: playlistId,
+      }),
+    });
+  }
+
+  /**
+   * Add scene to playlist (action)
+   */
+  async addSceneToPlaylist(
+    playlistId: string,
+    sceneId: string,
+    durationMs?: number
+  ): Promise<void> {
+    const playlist = await this.getPlaylist(playlistId);
+    if (!playlist) throw new Error(`Playlist '${playlistId}' not found`);
+    
+    const items = [...(playlist.items || []), { scene_id: sceneId, duration_ms: durationMs }];
+    await this.updatePlaylist(playlistId, { items });
   }
 }
 

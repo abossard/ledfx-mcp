@@ -13,7 +13,7 @@ This document outlines the test requirements and test cases for the LedFX MCP se
 ### Prerequisites
 
 1. **LedFX Instance**: Running LedFX server (via Docker or local installation)
-2. **Node.js**: Version 18+ for running the MCP server
+2. **Node.js**: Version 24 or 25 for running the MCP server
 3. **Test Framework**: Jest or similar for unit and integration tests
 4. **MCP Client**: Test harness for MCP protocol validation
 

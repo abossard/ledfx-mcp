@@ -21,23 +21,25 @@ export interface Palette {
   updated_at?: string;
 }
 
-export interface Playlist {
-  id?: number;
-  name: string;
-  description?: string;
-  scenes: string; // JSON array of scene IDs
-  transition_time?: number;
-  loop?: boolean;
-  created_at?: string;
-  updated_at?: string;
-}
-
 export interface CustomPreset {
   id?: number;
   name: string;
   effect_type: string;
   config: string; // JSON object
   palette_id?: number;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Theme {
+  id?: number;
+  name: string;
+  color_lows: string;
+  color_mids: string;
+  color_high: string;
+  background_color: string;
+  gradient?: string; // Custom gradient CSS string (optional)
   description?: string;
   created_at?: string;
   updated_at?: string;
@@ -81,20 +83,6 @@ export class PaletteDatabase {
       )
     `);
 
-    // Create playlists table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS playlists (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        description TEXT,
-        scenes TEXT NOT NULL,
-        transition_time INTEGER DEFAULT 5,
-        loop BOOLEAN DEFAULT 1,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
     // Create custom presets table
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS custom_presets (
@@ -111,10 +99,34 @@ export class PaletteDatabase {
       )
     `);
 
+    // Create themes table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS themes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        color_lows TEXT NOT NULL,
+        color_mids TEXT NOT NULL,
+        color_high TEXT NOT NULL,
+        background_color TEXT DEFAULT '#000000',
+        gradient TEXT,
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Add gradient column if missing (migration for existing DBs)
+    try {
+      this.db.exec(`ALTER TABLE themes ADD COLUMN gradient TEXT`);
+    } catch {
+      // Column already exists
+    }
+
     // Create indexes
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_palettes_category ON palettes(category);
       CREATE INDEX IF NOT EXISTS idx_presets_effect_type ON custom_presets(effect_type);
+      CREATE INDEX IF NOT EXISTS idx_themes_name ON themes(name);
     `);
   }
 
@@ -217,97 +229,6 @@ export class PaletteDatabase {
     stmt.run(id);
   }
 
-  // ============= Playlist Operations =============
-
-  /**
-   * Create a new playlist
-   */
-  createPlaylist(playlist: Omit<Playlist, "id" | "created_at" | "updated_at">): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO playlists (name, description, scenes, transition_time, loop)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    
-    const result = stmt.run(
-      playlist.name,
-      playlist.description || null,
-      playlist.scenes,
-      playlist.transition_time || 5,
-      playlist.loop !== undefined ? (playlist.loop ? 1 : 0) : 1
-    );
-    
-    return result.lastInsertRowid as number;
-  }
-
-  /**
-   * Get all playlists
-   */
-  getAllPlaylists(): Playlist[] {
-    const stmt = this.db.prepare("SELECT * FROM playlists ORDER BY name");
-    return stmt.all() as Playlist[];
-  }
-
-  /**
-   * Get playlist by ID
-   */
-  getPlaylist(id: number): Playlist | null {
-    const stmt = this.db.prepare("SELECT * FROM playlists WHERE id = ?");
-    return stmt.get(id) as Playlist | null;
-  }
-
-  /**
-   * Get playlist by name
-   */
-  getPlaylistByName(name: string): Playlist | null {
-    const stmt = this.db.prepare("SELECT * FROM playlists WHERE name = ?");
-    return stmt.get(name) as Playlist | null;
-  }
-
-  /**
-   * Update playlist
-   */
-  updatePlaylist(id: number, updates: Partial<Omit<Playlist, "id" | "created_at">>): void {
-    const fields: string[] = [];
-    const values: any[] = [];
-
-    if (updates.name !== undefined) {
-      fields.push("name = ?");
-      values.push(updates.name);
-    }
-    if (updates.description !== undefined) {
-      fields.push("description = ?");
-      values.push(updates.description);
-    }
-    if (updates.scenes !== undefined) {
-      fields.push("scenes = ?");
-      values.push(updates.scenes);
-    }
-    if (updates.transition_time !== undefined) {
-      fields.push("transition_time = ?");
-      values.push(updates.transition_time);
-    }
-    if (updates.loop !== undefined) {
-      fields.push("loop = ?");
-      values.push(updates.loop ? 1 : 0);
-    }
-
-    fields.push("updated_at = CURRENT_TIMESTAMP");
-    values.push(id);
-
-    const stmt = this.db.prepare(`
-      UPDATE playlists SET ${fields.join(", ")} WHERE id = ?
-    `);
-    stmt.run(...values);
-  }
-
-  /**
-   * Delete playlist
-   */
-  deletePlaylist(id: number): void {
-    const stmt = this.db.prepare("DELETE FROM playlists WHERE id = ?");
-    stmt.run(id);
-  }
-
   // ============= Custom Preset Operations =============
 
   /**
@@ -396,6 +317,62 @@ export class PaletteDatabase {
    */
   deleteCustomPreset(id: number): void {
     const stmt = this.db.prepare("DELETE FROM custom_presets WHERE id = ?");
+    stmt.run(id);
+  }
+
+  // ============= Theme Operations =============
+
+  /**
+   * Create a new theme
+   */
+  createTheme(theme: Omit<Theme, "id" | "created_at" | "updated_at">): number {
+    const stmt = this.db.prepare(`
+      INSERT INTO themes (name, color_lows, color_mids, color_high, background_color, gradient, description)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    const result = stmt.run(
+      theme.name,
+      theme.color_lows,
+      theme.color_mids,
+      theme.color_high,
+      theme.background_color || "#000000",
+      theme.gradient || null,
+      theme.description || null
+    );
+    
+    return result.lastInsertRowid as number;
+  }
+
+  /**
+   * Get all themes
+   */
+  getAllThemes(): Theme[] {
+    const stmt = this.db.prepare("SELECT * FROM themes ORDER BY name");
+    return stmt.all() as Theme[];
+  }
+
+  /**
+   * Get theme by ID
+   */
+  getTheme(id: number): Theme | null {
+    const stmt = this.db.prepare("SELECT * FROM themes WHERE id = ?");
+    return stmt.get(id) as Theme | null;
+  }
+
+  /**
+   * Get theme by name
+   */
+  getThemeByName(name: string): Theme | null {
+    const stmt = this.db.prepare("SELECT * FROM themes WHERE name = ?");
+    return stmt.get(name) as Theme | null;
+  }
+
+  /**
+   * Delete theme
+   */
+  deleteTheme(id: number): void {
+    const stmt = this.db.prepare("DELETE FROM themes WHERE id = ?");
     stmt.run(id);
   }
 
