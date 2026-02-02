@@ -332,11 +332,75 @@ Enable `mirror: true` on effects that animate from one end to the other. This cr
 
 ## Hardware Setup
 
-- **Virtual:** 3linematrix (main blender output)
-- **Source Virtuals:**
+- **Virtual:** 3linematrix (main output virtual)
+- **Source Virtuals (for blender mode only):**
   - 3linematrix-background (background layer)
   - 3linematrix-foreground (foreground layer)
   - 3linematrix-mask (strobe/mask layer)
+- **Other Virtuals:** baby (not used in DJ scenes)
+
+---
+
+## Effect Mode Architecture
+
+### Direct Effects vs Blender
+The 3linematrix virtual can operate in two modes:
+
+#### Direct Effect Mode (Used by all P1-P4 scenes)
+- **3linematrix** runs a direct effect (wavelength, energy, scroll, etc.)
+- The effect renders directly to the LED matrix
+- Source virtuals (background, foreground, mask) are **ignored**
+- This is the mode used by all DJ phase scenes
+
+#### Blender Mode (Advanced compositing)
+- **3linematrix** runs the `blender` effect
+- The blender composites multiple layers:
+  - Background virtual → base layer
+  - Foreground virtual → overlaid on top
+  - Mask virtual → controls transparency/strobes
+- **Important:** The blender effect config MUST specify the source virtual names:
+  - `"background": "3linematrix-background"`
+  - `"foreground": "3linematrix-foreground"`
+  - `"mask": "3linematrix-mask"`
+- All source virtuals MUST have active effects before applying blender
+
+### Blender Scenes (8 Total)
+
+Each phase has 2 blender scenes for advanced layered effects:
+
+| Scene ID | Phase | Background | Foreground | Mask | Description |
+|----------|-------|------------|------------|------|-------------|
+| `p1-blender-jungle` | P1 | singleColor (dark green) | wavelength | singleColor (off) | Spectrum on solid bg |
+| `p1-blender-disco` | P1 | gradient (green/yellow) | energy | strobe | Energy with disco strobe |
+| `p2-blender-tension` | P2 | singleColor (dark purple) | blade_power_plus | singleColor (off) | Bass bars on moody bg |
+| `p2-blender-rise` | P2 | gradient (blue/purple) | energy | strobe | Rising energy with flash |
+| `p3-blender-power` | P3 | singleColor (black) | power | singleColor (off) | Bass power on pure black |
+| `p3-blender-chaos` | P3 | gradient (purple/red) | blade_power_plus | real_strobe | Maximum chaos mode |
+| `p4-blender-flow` | P4 | singleColor (dark blue) | energy2 | singleColor (off) | Flowing release |
+| `p4-blender-ethereal` | P4 | gradient (blue/lavender) | wavelength | strobe | Gentle ethereal pulse |
+
+### Creating Blender Scenes
+When creating a blender scene:
+1. Set effects on all source virtuals FIRST (background, foreground, mask)
+2. For "no mask", use `singleColor` with `brightness: 0, color: #000000`
+3. Apply `blender` effect to 3linematrix with source virtual names in config
+4. Clear baby virtual
+5. Delete and recreate the scene to save
+
+### Scene Cleanliness
+All P1-P4 scenes are configured with:
+- **3linematrix**: Has the active effect with proper settings
+- **Source virtuals**: Cleared (no effect) to avoid confusion
+- **baby**: Cleared (not used in DJ workflow)
+
+When a scene uses direct effects on 3linematrix, the source virtuals show empty in the UI. This is intentional - it indicates the scene is clean and uses direct mode, not blender compositing.
+
+### Creating New Scenes
+When creating a new DJ scene:
+1. Set the effect directly on **3linematrix** (not on source virtuals)
+2. Leave source virtuals empty/cleared
+3. Include `mirror: true` and phase-appropriate `background_color`
+4. Delete and recreate the scene to save current state
 
 ---
 
