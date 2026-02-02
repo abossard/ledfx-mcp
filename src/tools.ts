@@ -128,7 +128,7 @@ export const tools: Tool[] = [
           type: "string",
           description: "Effect type: rainbow, pulse, wavelength, energy, singleColor, gradient, scroll, strobe, etc.",
         },
-        config: {
+        effect_config: {
           type: "object",
           description: "Effect configuration (speed, color, brightness, etc.)",
           additionalProperties: true,
@@ -838,7 +838,7 @@ export async function handleToolCall(
         await client.setVirtualEffect(
           args.virtual_id,
           args.effect_type,
-          args.config || {}
+          args.effect_config || {}
         );
         return formatResponse({
           success: true,
