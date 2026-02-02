@@ -360,10 +360,18 @@ export class LedFxClient {
   }
 
   /**
-   * Get effect schemas (action)
+   * Get full schema including all effect types (action)
+   */
+  async getSchema(): Promise<Record<string, any>> {
+    return await this.request("/schema");
+  }
+
+  /**
+   * Get effect schemas/types (action)
    */
   async getEffectSchemas(): Promise<Record<string, EffectSchema>> {
-    return await this.request("/schema/effects");
+    const schema = await this.getSchema();
+    return schema.effects || {};
   }
 
   /**
@@ -474,6 +482,7 @@ export class LedFxClient {
 
   /**
    * Update an existing playlist (action)
+   * Note: LedFX doesn't support update, so we delete and recreate
    */
   async updatePlaylist(
     id: string,
@@ -484,14 +493,23 @@ export class LedFxClient {
       default_duration_ms?: number;
     }
   ): Promise<void> {
-    await this.request("/playlists", {
-      method: "PUT",
-      body: JSON.stringify({
-        action: "update",
-        id,
-        ...updates,
-      }),
-    });
+    // Get current playlist
+    const current = await this.getPlaylist(id);
+    if (!current) throw new Error(`Playlist '${id}' not found`);
+
+    // Delete existing
+    await this.deletePlaylist(id);
+
+    // Recreate with updates
+    await this.createPlaylist(
+      id,
+      updates.name || current.name,
+      updates.items || current.items,
+      {
+        mode: updates.mode || current.mode || "sequence",
+        default_duration_ms: updates.default_duration_ms || current.default_duration_ms || 15000,
+      }
+    );
   }
 
   /**

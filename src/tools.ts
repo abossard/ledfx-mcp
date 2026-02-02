@@ -14,7 +14,7 @@ import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { LedFxClient } from "./ledfx-client.js";
 import { getDatabase } from "./database.js";
 import { findColor, findGradient, NAMED_COLORS, GRADIENTS, getColorCategories, getGradientCategories } from "./colors.js";
-import { parseSceneDescription, recommendEffects, explainFeature, getFeatureCategories, EFFECT_TYPES } from "./ai-helper.js";
+import { parseSceneDescription, recommendEffects, explainFeature, getFeatureCategories } from "./ai-helper.js";
 import logger from "./logger.js";
 
 // ========== Effect Types for Theme Application ==========
@@ -1032,6 +1032,65 @@ export async function handleToolCall(
         return formatResponse(status);
       }
 
+      case "ledfx_create_playlist": {
+        const items = (args.scene_ids as string[]).map((sceneId: string) => ({
+          scene_id: sceneId,
+          duration_ms: args.duration_ms || 15000,
+        }));
+        const playlist = await client.createPlaylist(
+          args.id,
+          args.name,
+          items,
+          {
+            mode: args.mode || "sequence",
+            default_duration_ms: args.duration_ms || 15000,
+          }
+        );
+        return formatResponse({
+          success: true,
+          message: `Playlist '${args.name}' created`,
+          playlist,
+        });
+      }
+
+      case "ledfx_update_playlist": {
+        const updates: Record<string, any> = {};
+        if (args.name) updates.name = args.name;
+        if (args.mode) updates.mode = args.mode;
+        if (args.duration_ms) updates.default_duration_ms = args.duration_ms;
+        if (args.scene_ids) {
+          updates.items = (args.scene_ids as string[]).map((sceneId: string) => ({
+            scene_id: sceneId,
+            duration_ms: args.duration_ms || 15000,
+          }));
+        }
+        await client.updatePlaylist(args.playlist_id, updates);
+        return formatResponse({
+          success: true,
+          message: `Playlist '${args.playlist_id}' updated`,
+        });
+      }
+
+      case "ledfx_delete_playlist": {
+        await client.deletePlaylist(args.playlist_id);
+        return formatResponse({
+          success: true,
+          message: `Playlist '${args.playlist_id}' deleted`,
+        });
+      }
+
+      case "ledfx_add_scene_to_playlist": {
+        await client.addSceneToPlaylist(
+          args.playlist_id,
+          args.scene_id,
+          args.duration_ms
+        );
+        return formatResponse({
+          success: true,
+          message: `Scene '${args.scene_id}' added to playlist '${args.playlist_id}'`,
+        });
+      }
+
       // ========== Themes ==========
       case "ledfx_create_theme": {
         const id = db.createTheme({
@@ -1205,7 +1264,20 @@ export async function handleToolCall(
       }
 
       case "ledfx_list_effect_types": {
-        return formatResponse(EFFECT_TYPES);
+        // Dynamically fetch all effect types from LedFX API
+        const effectSchemas = await client.getEffectSchemas();
+        const effectTypes = Object.entries(effectSchemas).map(([id, data]: [string, any]) => ({
+          id,
+          name: data.name || id,
+          category: data.category || "Unknown",
+          description: data.schema?.properties?.gradient?.description || "",
+        }));
+        // Sort by category then name
+        effectTypes.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+        return formatResponse({
+          count: effectTypes.length,
+          effects: effectTypes,
+        });
       }
 
       // ========== Audio ==========
