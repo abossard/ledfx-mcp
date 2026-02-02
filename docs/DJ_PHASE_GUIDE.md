@@ -21,6 +21,7 @@ A 4-phase lighting design for DJ sets, with normal (rhythm-focused) and crazy (s
 
 ### Characteristics
 - **Energy Level:** 60-70% brightness
+- **Background Color:** Dark green (`#001a00` or `#002200`)
 - **Movement:** Slow, rhythmic, flowing
 - **Audio Focus:** Emphasize bass rhythm, not overpowering
 - **Color Palette:** 
@@ -50,6 +51,7 @@ A 4-phase lighting design for DJ sets, with normal (rhythm-focused) and crazy (s
 
 ### Characteristics
 - **Energy Level:** 75-85% brightness
+- **Background Color:** Very dark purple (`#0a000a` or `#110011`)
 - **Movement:** More dynamic, stronger contrasts
 - **Audio Focus:** Emphasize beat detection, build anticipation
 - **Color Palette:**
@@ -79,6 +81,7 @@ A 4-phase lighting design for DJ sets, with normal (rhythm-focused) and crazy (s
 
 ### Characteristics
 - **Energy Level:** 100% brightness (with dark moments)
+- **Background Color:** Pure black (`#000000`)
 - **Movement:** Fast, chaotic, intense
 - **Audio Focus:** Maximum beat/bass reactivity
 - **Color Palette:**
@@ -109,6 +112,7 @@ A 4-phase lighting design for DJ sets, with normal (rhythm-focused) and crazy (s
 
 ### Characteristics
 - **Energy Level:** 70-80% brightness
+- **Background Color:** Dark blue (`#000022` or `#000033`)
 - **Movement:** Smoother transitions
 - **Audio Focus:** Balance between rhythm and melody
 - **Color Palette:**
@@ -289,6 +293,30 @@ Gentler strobes, longer transitions. 12s transitions.
 |--------|----------|----------|
 | strobe | BPM | Beat-synced flash |
 | real_strobe | Classic | Percussion response |
+
+---
+
+## Effect Settings Guidelines
+
+### Mirror Mode
+Enable `mirror: true` on effects that animate from one end to the other. This creates symmetry and looks more professional:
+- **wavelength** - always enable mirror
+- **breathing** - always enable mirror
+- **scroll** - enable mirror for centered look
+- **energy** - enable mirror for balanced visuals
+
+### Background Colors by Phase
+| Phase | Background Color | Hex Code |
+|-------|-----------------|----------|
+| P1 Jungle | Dark Green | `#001a00` |
+| P2 Buildup | Very Dark Purple | `#0a000a` |
+| P3 Peak | Pure Black | `#000000` |
+| P4 Release | Dark Blue | `#000022` |
+
+### Effect-Specific Notes
+- **breathing**: Only interesting when set to fast speed. Boring at slow speeds - use sparingly or with high frequency.
+- **wavelength**: Always use with mirror enabled.
+- **scroll**: Consider mirror for symmetric patterns.
 
 ---
 
