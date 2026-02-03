@@ -63,6 +63,101 @@ export interface EffectSchema {
   };
 }
 
+// ========== Backup/Restore Types ==========
+
+export interface BackupVirtualEffect {
+  type: string;
+  config: Record<string, any>;
+}
+
+export interface BackupVirtual {
+  id: string;
+  config: {
+    name: string;
+    pixel_count?: number;
+    [key: string]: any;
+  };
+  active: boolean;
+  effect?: BackupVirtualEffect;
+}
+
+export interface BackupScene {
+  id: string;
+  name: string;
+  scene_tags?: string;
+  virtuals: Record<string, {
+    effect: BackupVirtualEffect;
+  }>;
+}
+
+export interface BackupPlaylist {
+  id: string;
+  name: string;
+  items: Array<{
+    scene_id: string;
+    duration_ms: number;
+  }>;
+  mode: "sequence" | "shuffle";
+  default_duration_ms: number;
+  timing?: Record<string, any>;
+  tags?: string[];
+  image?: string;
+}
+
+export interface BackupAudioConfig {
+  active_device_index: number;
+  devices: Record<string, string>;
+}
+
+export interface LedFxBackup {
+  version: string;
+  timestamp: string;
+  ledfx_version?: string;
+  virtuals: BackupVirtual[];
+  scenes: BackupScene[];
+  playlists: BackupPlaylist[];
+  audio?: BackupAudioConfig;
+  metadata?: {
+    description?: string;
+    created_by?: string;
+  };
+}
+
+export interface RestoreOptions {
+  restore_virtuals?: boolean;
+  restore_scenes?: boolean;
+  restore_playlists?: boolean;
+  restore_audio?: boolean;
+  clear_existing?: boolean;
+  dry_run?: boolean;
+}
+
+export interface RestoreResult {
+  success: boolean;
+  dry_run: boolean;
+  virtuals: {
+    restored: number;
+    skipped: number;
+    errors: string[];
+  };
+  scenes: {
+    restored: number;
+    skipped: number;
+    deleted: number;
+    errors: string[];
+  };
+  playlists: {
+    restored: number;
+    skipped: number;
+    deleted: number;
+    errors: string[];
+  };
+  audio: {
+    restored: boolean;
+    error?: string;
+  };
+}
+
 /**
  * Client for interacting with LedFX instance
  * Deep module with simple interface hiding HTTP complexity
@@ -537,6 +632,315 @@ export class LedFxClient {
     
     const items = [...(playlist.items || []), { scene_id: sceneId, duration_ms: durationMs }];
     await this.updatePlaylist(playlistId, { items });
+  }
+
+  // ========== Backup/Restore ==========
+
+  /**
+   * Create a complete backup of LedFX configuration (action)
+   */
+  async createBackup(description?: string): Promise<LedFxBackup> {
+    // Get LedFX version
+    let ledfxVersion: string | undefined;
+    try {
+      const info = await this.getInfo();
+      ledfxVersion = info.version;
+    } catch {
+      // Version info not critical
+    }
+
+    // Get all virtuals with their current effects
+    const virtualsResponse = await this.request<{ virtuals: Record<string, any> }>("/virtuals");
+    const virtuals: BackupVirtual[] = Object.entries(virtualsResponse.virtuals || {}).map(
+      ([id, v]: [string, any]) => ({
+        id,
+        config: v.config || { name: v.config?.name || id },
+        active: v.active ?? false,
+        effect: v.effect ? {
+          type: v.effect.type,
+          config: v.effect.config || {},
+        } : undefined,
+      })
+    );
+
+    // Get all scenes with their virtual configurations
+    const scenesResponse = await this.request<{ scenes: Record<string, any> }>("/scenes");
+    const scenes: BackupScene[] = Object.entries(scenesResponse.scenes || {}).map(
+      ([id, s]: [string, any]) => ({
+        id,
+        name: s.name || id,
+        scene_tags: s.scene_tags,
+        virtuals: s.virtuals || {},
+      })
+    );
+
+    // Get all playlists
+    const playlistsResponse = await this.getPlaylists();
+    const playlists: BackupPlaylist[] = Object.entries(playlistsResponse).map(
+      ([id, p]: [string, any]) => ({
+        id,
+        name: p.name || id,
+        items: p.items || [],
+        mode: p.mode || "sequence",
+        default_duration_ms: p.default_duration_ms || 15000,
+        timing: p.timing,
+        tags: p.tags,
+        image: p.image,
+      })
+    );
+
+    // Get audio config
+    let audio: BackupAudioConfig | undefined;
+    try {
+      audio = await this.getAudioDevices();
+    } catch {
+      // Audio config not critical
+    }
+
+    return {
+      version: "1.0.0",
+      timestamp: new Date().toISOString(),
+      ledfx_version: ledfxVersion,
+      virtuals,
+      scenes,
+      playlists,
+      audio,
+      metadata: {
+        description,
+        created_by: "ledfx-mcp",
+      },
+    };
+  }
+
+  /**
+   * Restore LedFX configuration from a backup (action)
+   */
+  async restoreBackup(
+    backup: LedFxBackup,
+    options: RestoreOptions = {}
+  ): Promise<RestoreResult> {
+    const {
+      restore_virtuals = true,
+      restore_scenes = true,
+      restore_playlists = true,
+      restore_audio = false,
+      clear_existing = false,
+      dry_run = false,
+    } = options;
+
+    const result: RestoreResult = {
+      success: true,
+      dry_run,
+      virtuals: { restored: 0, skipped: 0, errors: [] },
+      scenes: { restored: 0, skipped: 0, deleted: 0, errors: [] },
+      playlists: { restored: 0, skipped: 0, deleted: 0, errors: [] },
+      audio: { restored: false },
+    };
+
+    // Clear existing if requested
+    if (clear_existing && !dry_run) {
+      // Delete existing scenes (except those not in backup if not clearing)
+      if (restore_scenes) {
+        const currentScenes = await this.getScenes();
+        for (const scene of currentScenes) {
+          try {
+            await this.deleteScene(scene.id);
+            result.scenes.deleted++;
+          } catch (e) {
+            result.scenes.errors.push(`Failed to delete scene '${scene.id}': ${e}`);
+          }
+        }
+      }
+
+      // Delete existing playlists
+      if (restore_playlists) {
+        const currentPlaylists = await this.getPlaylists();
+        for (const playlistId of Object.keys(currentPlaylists)) {
+          try {
+            await this.deletePlaylist(playlistId);
+            result.playlists.deleted++;
+          } catch (e) {
+            result.playlists.errors.push(`Failed to delete playlist '${playlistId}': ${e}`);
+          }
+        }
+      }
+    }
+
+    // Restore virtual effects
+    if (restore_virtuals) {
+      for (const virtual of backup.virtuals) {
+        if (dry_run) {
+          result.virtuals.restored++;
+          continue;
+        }
+
+        try {
+          // Set virtual active state
+          await this.setVirtualActive(virtual.id, virtual.active);
+
+          // Set effect if present
+          if (virtual.effect) {
+            await this.setVirtualEffect(
+              virtual.id,
+              virtual.effect.type,
+              virtual.effect.config
+            );
+          } else {
+            // Clear effect if none in backup
+            try {
+              await this.clearVirtualEffect(virtual.id);
+            } catch {
+              // Ignore if no effect to clear
+            }
+          }
+          result.virtuals.restored++;
+        } catch (e) {
+          result.virtuals.errors.push(`Failed to restore virtual '${virtual.id}': ${e}`);
+          result.virtuals.skipped++;
+        }
+      }
+    }
+
+    // Restore scenes
+    if (restore_scenes) {
+      for (const scene of backup.scenes) {
+        if (dry_run) {
+          result.scenes.restored++;
+          continue;
+        }
+
+        try {
+          // First, apply the virtual effects from the scene
+          for (const [virtualId, virtualConfig] of Object.entries(scene.virtuals)) {
+            if (virtualConfig.effect) {
+              await this.setVirtualEffect(
+                virtualId,
+                virtualConfig.effect.type,
+                virtualConfig.effect.config
+              );
+            }
+          }
+
+          // Delete existing scene if it exists (to update it)
+          try {
+            await this.deleteScene(scene.id);
+          } catch {
+            // Scene might not exist, that's fine
+          }
+
+          // Create the scene
+          await this.createScene(scene.name || scene.id, scene.scene_tags);
+          result.scenes.restored++;
+        } catch (e) {
+          result.scenes.errors.push(`Failed to restore scene '${scene.id}': ${e}`);
+          result.scenes.skipped++;
+        }
+      }
+    }
+
+    // Restore playlists
+    if (restore_playlists) {
+      for (const playlist of backup.playlists) {
+        if (dry_run) {
+          result.playlists.restored++;
+          continue;
+        }
+
+        try {
+          // Delete existing playlist if it exists
+          try {
+            await this.deletePlaylist(playlist.id);
+          } catch {
+            // Playlist might not exist, that's fine
+          }
+
+          // Create the playlist
+          await this.createPlaylist(
+            playlist.id,
+            playlist.name,
+            playlist.items,
+            {
+              mode: playlist.mode,
+              default_duration_ms: playlist.default_duration_ms,
+            }
+          );
+          result.playlists.restored++;
+        } catch (e) {
+          result.playlists.errors.push(`Failed to restore playlist '${playlist.id}': ${e}`);
+          result.playlists.skipped++;
+        }
+      }
+    }
+
+    // Restore audio config
+    if (restore_audio && backup.audio) {
+      if (dry_run) {
+        result.audio.restored = true;
+      } else {
+        try {
+          await this.setAudioDevice(backup.audio.active_device_index);
+          result.audio.restored = true;
+        } catch (e) {
+          result.audio.error = `Failed to restore audio config: ${e}`;
+        }
+      }
+    }
+
+    // Check overall success
+    result.success =
+      result.virtuals.errors.length === 0 &&
+      result.scenes.errors.length === 0 &&
+      result.playlists.errors.length === 0 &&
+      !result.audio.error;
+
+    return result;
+  }
+
+  /**
+   * Validate a backup file structure (calculation)
+   */
+  validateBackup(backup: unknown): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    if (!backup || typeof backup !== "object") {
+      return { valid: false, errors: ["Backup must be an object"] };
+    }
+
+    const b = backup as Record<string, any>;
+
+    if (!b.version || typeof b.version !== "string") {
+      errors.push("Missing or invalid 'version' field");
+    }
+
+    if (!b.timestamp || typeof b.timestamp !== "string") {
+      errors.push("Missing or invalid 'timestamp' field");
+    }
+
+    if (!Array.isArray(b.virtuals)) {
+      errors.push("Missing or invalid 'virtuals' field (must be array)");
+    } else {
+      b.virtuals.forEach((v: any, i: number) => {
+        if (!v.id) errors.push(`Virtual at index ${i} missing 'id'`);
+      });
+    }
+
+    if (!Array.isArray(b.scenes)) {
+      errors.push("Missing or invalid 'scenes' field (must be array)");
+    } else {
+      b.scenes.forEach((s: any, i: number) => {
+        if (!s.id) errors.push(`Scene at index ${i} missing 'id'`);
+      });
+    }
+
+    if (!Array.isArray(b.playlists)) {
+      errors.push("Missing or invalid 'playlists' field (must be array)");
+    } else {
+      b.playlists.forEach((p: any, i: number) => {
+        if (!p.id) errors.push(`Playlist at index ${i} missing 'id'`);
+      });
+    }
+
+    return { valid: errors.length === 0, errors };
   }
 }
 

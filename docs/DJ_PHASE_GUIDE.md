@@ -145,7 +145,7 @@ Each phase has **two playlists**: Normal (rhythm/pitch focused) and Crazy (with 
 **Color Palette:** `linear-gradient(90deg, #228b22 0%, #00aa00 30%, #ffff00 70%, #0096c8 100%)` (Green → Yellow → Blue accents)
 
 #### P1 Phase Normal (id: `p1-normal`)
-Warm, rhythmic variety with green/yellow colors. No strobes. 12s transitions.
+Warm, rhythmic variety with green/yellow colors. No strobes. 32s transitions.
 
 | Scene | Effect | Description |
 |-------|--------|-------------|
@@ -156,7 +156,7 @@ Warm, rhythmic variety with green/yellow colors. No strobes. 12s transitions.
 | P1-Scroll | `scroll` | Smooth color chase |
 
 #### P1 Phase Crazy (id: `p1-crazy`)
-Same colors with strobe bursts. 10s transitions.
+Same colors with strobe bursts. 32s transitions.
 
 | Scene | Effect | Description |
 |-------|--------|-------------|
@@ -174,7 +174,7 @@ Same colors with strobe bursts. 10s transitions.
 **Color Palette:** `linear-gradient(90deg, #0044aa 0%, #00ffff 50%, #9900ff 100%)` (Blue → Cyan → Purple)
 
 #### P2 Phase Normal (id: `p2-normal`)
-Rising tension with blue/cyan colors. No strobes. 12s transitions.
+Rising tension with blue/cyan colors. No strobes. 32s transitions.
 
 | Scene | Effect | Description |
 |-------|--------|-------------|
@@ -185,7 +185,7 @@ Rising tension with blue/cyan colors. No strobes. 12s transitions.
 | P2-Scroll | `scroll` | Color chase |
 
 #### P2 Phase Crazy (id: `p2-crazy`)
-Same colors with increasing strobe intensity. 10s transitions.
+Same colors with increasing strobe intensity. 32s transitions.
 
 | Scene | Effect | Description |
 |-------|--------|-------------|
@@ -203,7 +203,7 @@ Same colors with increasing strobe intensity. 10s transitions.
 **Color Palette:** `linear-gradient(90deg, #9900ff 0%, #ff00aa 50%, #ff0000 100%)` (Purple → Magenta → Red)
 
 #### P3 Phase Normal (id: `p3-normal`)
-Maximum energy with purple/red colors. Bass-reactive. 10s transitions.
+Maximum energy with purple/red colors. Bass-reactive. 32s transitions.
 
 | Scene | Effect | Description |
 |-------|--------|-------------|
@@ -214,7 +214,7 @@ Maximum energy with purple/red colors. Bass-reactive. 10s transitions.
 | P3-Scroll | `scroll` | Fast color chase |
 
 #### P3 Phase Crazy (id: `p3-crazy`)
-Full intensity with real_strobe. 8s transitions.
+Full intensity with real_strobe. 32s transitions.
 
 | Scene | Effect | Description |
 |-------|--------|-------------|
@@ -232,7 +232,7 @@ Full intensity with real_strobe. 8s transitions.
 **Color Palette:** `linear-gradient(90deg, #3366cc 0%, #cc99ff 50%, #00ccff 100%)` (Blue → Lavender → Aqua)
 
 #### P4 Phase Normal (id: `p4-normal`)
-Cool down with blue/lavender colors. Flowing effects. 15s transitions.
+Cool down with blue/lavender colors. Flowing effects. 32s transitions.
 
 | Scene | Effect | Description |
 |-------|--------|-------------|
@@ -243,7 +243,7 @@ Cool down with blue/lavender colors. Flowing effects. 15s transitions.
 | P4-Scroll | `scroll` | Smooth color chase |
 
 #### P4 Phase Crazy (id: `p4-crazy`)
-Gentler strobes, longer transitions. 12s transitions.
+Gentler strobes, longer transitions. 32s transitions.
 
 | Scene | Effect | Description |
 |-------|--------|-------------|

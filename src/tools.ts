@@ -11,11 +11,13 @@
  */
 
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { LedFxClient } from "./ledfx-client.js";
+import { LedFxClient, LedFxBackup, RestoreOptions } from "./ledfx-client.js";
 import { getDatabase } from "./database.js";
 import { findColor, findGradient, NAMED_COLORS, GRADIENTS, getColorCategories, getGradientCategories } from "./colors.js";
 import { parseSceneDescription, recommendEffects, explainFeature, getFeatureCategories } from "./ai-helper.js";
 import logger from "./logger.js";
+import * as fs from "fs";
+import * as path from "path";
 
 // ========== Effect Types for Theme Application ==========
 const THEME_EFFECT_TYPES = [
@@ -754,6 +756,78 @@ export const tools: Tool[] = [
       required: ["device_index"],
     },
   },
+
+  // ========== Backup/Restore ==========
+  {
+    name: "ledfx_create_backup",
+    description: "Create a complete backup of LedFX configuration (virtuals, scenes, playlists, audio). Optionally saves to a local file path.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_path: {
+          type: "string",
+          description: "Local file path to save the backup (e.g., '/Users/me/backups/ledfx-backup.json'). If not provided, returns backup in response.",
+        },
+        description: {
+          type: "string",
+          description: "Optional description for the backup (e.g., 'Before major changes', 'DJ setup v2')",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "ledfx_restore_backup",
+    description: "Restore LedFX configuration from a backup JSON. Can selectively restore virtuals, scenes, and/or playlists.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        backup: {
+          type: "object",
+          description: "The backup object to restore (from ledfx_create_backup)",
+        },
+        restore_virtuals: {
+          type: "boolean",
+          description: "Restore virtual effects (default: true)",
+        },
+        restore_scenes: {
+          type: "boolean",
+          description: "Restore scenes (default: true)",
+        },
+        restore_playlists: {
+          type: "boolean",
+          description: "Restore playlists (default: true)",
+        },
+        restore_audio: {
+          type: "boolean",
+          description: "Restore audio device setting (default: false)",
+        },
+        clear_existing: {
+          type: "boolean",
+          description: "Delete all existing scenes/playlists before restoring (default: false)",
+        },
+        dry_run: {
+          type: "boolean",
+          description: "Simulate restore without making changes (default: false)",
+        },
+      },
+      required: ["backup"],
+    },
+  },
+  {
+    name: "ledfx_validate_backup",
+    description: "Validate a backup JSON structure without restoring it",
+    inputSchema: {
+      type: "object",
+      properties: {
+        backup: {
+          type: "object",
+          description: "The backup object to validate",
+        },
+      },
+      required: ["backup"],
+    },
+  },
 ];
 
 /**
@@ -1291,6 +1365,97 @@ export async function handleToolCall(
         return formatResponse({
           success: true,
           message: `Audio device set to index ${args.device_index}`,
+        });
+      }
+
+      // ========== Backup/Restore ==========
+      case "ledfx_create_backup": {
+        const backup = await client.createBackup(args.description);
+        
+        // Save to file if path provided
+        if (args.file_path) {
+          const filePath = path.resolve(args.file_path);
+          const dir = path.dirname(filePath);
+          
+          // Create directory if it doesn't exist
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+          
+          fs.writeFileSync(filePath, JSON.stringify(backup, null, 2), "utf-8");
+          
+          return formatResponse({
+            success: true,
+            message: `Backup saved to ${filePath}`,
+            file_path: filePath,
+            summary: {
+              virtuals: backup.virtuals.length,
+              scenes: backup.scenes.length,
+              playlists: backup.playlists.length,
+              timestamp: backup.timestamp,
+            },
+          });
+        }
+        
+        return formatResponse({
+          success: true,
+          message: "Backup created successfully",
+          backup,
+          summary: {
+            virtuals: backup.virtuals.length,
+            scenes: backup.scenes.length,
+            playlists: backup.playlists.length,
+            timestamp: backup.timestamp,
+          },
+        });
+      }
+
+      case "ledfx_restore_backup": {
+        // Validate backup first
+        const validation = client.validateBackup(args.backup);
+        if (!validation.valid) {
+          return formatResponse({
+            success: false,
+            error: "Invalid backup format",
+            validation_errors: validation.errors,
+          });
+        }
+
+        const restoreOptions: RestoreOptions = {
+          restore_virtuals: args.restore_virtuals,
+          restore_scenes: args.restore_scenes,
+          restore_playlists: args.restore_playlists,
+          restore_audio: args.restore_audio,
+          clear_existing: args.clear_existing,
+          dry_run: args.dry_run,
+        };
+
+        const result = await client.restoreBackup(args.backup as LedFxBackup, restoreOptions);
+        return formatResponse({
+          success: result.success,
+          dry_run: result.dry_run,
+          message: result.dry_run 
+            ? "Dry run completed - no changes made" 
+            : "Restore completed",
+          result,
+        });
+      }
+
+      case "ledfx_validate_backup": {
+        const validation = client.validateBackup(args.backup);
+        const backup = args.backup as Partial<LedFxBackup>;
+        return formatResponse({
+          valid: validation.valid,
+          errors: validation.errors,
+          summary: validation.valid ? {
+            version: backup.version,
+            timestamp: backup.timestamp,
+            ledfx_version: backup.ledfx_version,
+            virtuals: backup.virtuals?.length || 0,
+            scenes: backup.scenes?.length || 0,
+            playlists: backup.playlists?.length || 0,
+            description: backup.metadata?.description,
+          } : undefined,
         });
       }
 
