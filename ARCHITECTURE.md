@@ -16,7 +16,7 @@
                              ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Tools Layer (tools.ts)                       │
-│                         35 MCP Tools                                │
+│                         40+ MCP Tools                               │
 │  ┌──────────────┬──────────────┬──────────────┬──────────────┐    │
 │  │   Virtuals   │   Effects    │   Scenes     │   Palettes   │    │
 │  │   Presets    │   Playlists  │   Colors     │   AI Help    │    │
@@ -24,28 +24,26 @@
 └────────┬────────────┬────────────┬────────────┬────────────────────┘
          │            │            │            │
          ▼            ▼            ▼            ▼
-┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
-│  LedFX     │ │  Database  │ │   Colors   │ │ AI Helper  │
-│  Client    │ │  (SQLite)  │ │  Library   │ │   (NLP)    │
-│            │ │            │ │            │ │            │
-│ • Virtuals │ │ • Palettes │ │ • 50+      │ │ • Scene    │
-│ • Effects  │ │ • Playlists│ │   Colors   │ │   Parsing  │
-│ • Scenes   │ │ • Presets  │ │ • 15+      │ │ • Effect   │
-│ • Presets  │ │ • CRUD ops │ │   Gradients│ │   Recs     │
-│ • Audio    │ │            │ │ • Utils    │ │ • Explains │
-└──────┬─────┘ └──────┬─────┘ └────────────┘ └────────────┘
-       │              │
-       │              ▼
-       │      ~/.ledfx-mcp/
-       │      palettes.db
-       │
-       ▼
+┌────────────┐ ┌────────────┐
+│  LedFX     │ │ AI Helper  │
+│  Client    │ │   (NLP)    │
+│            │ │            │
+│ • Virtuals │ │ • Scene    │
+│ • Effects  │ │   Parsing  │
+│ • Scenes   │ │ • Effect   │
+│ • Presets  │ │   Recs     │
+│ • Audio    │ │ • Explains │
+│ • Colors   │ └────────────┘
+└──────┬─────┘
+  │
+  ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    LedFX HTTP API                                   │
 │                  (localhost:8888/api)                               │
 │                                                                     │
 │  /virtuals/          /effects/           /scenes/                  │
 │  /devices/           /presets/           /audio/                   │
+│  /colors/                                                     │
 └────────────────────────────┬────────────────────────────────────────┘
                              │
                              ▼
@@ -70,10 +68,10 @@ MCP Server (stdio)
 Tools Layer → ledfx_create_scene_from_description
   ↓
 AI Helper → parseSceneDescription()
-  • Extracts: gradient effect, ocean colors, speed=20, tags=chill
+  • Extracts: gradient effect, ocean gradient, speed=20, tags=chill
   ↓
-Colors Library → findGradient("ocean")
-  • Returns: ["#003973", "#0066CC", "#0099FF", "#00CCFF", "#00FFFF"]
+LedFX /api/colors → get colors and gradients
+  • Provides: builtin + user gradients (CSS strings)
   ↓
 LedFX Client → setVirtualEffect(virtualId, "gradient", config)
   ↓
@@ -85,7 +83,7 @@ Physical LEDs → Display ocean gradient
 ### 2. Palette Management
 
 ```
-User: "Create palette 'Sunset Vibes' with orange, pink, purple"
+User: "Create palette 'Sunset Vibes' with #FFA500, #FF69B4, #800080"
   ↓
 Claude (MCP Client)
   ↓
@@ -93,16 +91,12 @@ MCP Server
   ↓
 Tools Layer → ledfx_create_palette
   ↓
-Colors Library → findColor() for each name
-  • orange: #FFA500
-  • pink: #FFC0CB
-  • purple: #800080
+Build gradient string
+  • linear-gradient(90deg, #FFA500, #FF69B4, #800080)
   ↓
-Database → createPalette()
+LedFX /api/colors → POST {"palette:Sunset Vibes": "linear-gradient(...)"}
   ↓
-SQLite → INSERT INTO palettes
-  ↓
-Returns: { id: 1, name: "Sunset Vibes", colors: [...] }
+Returns: { id: "palette:Sunset Vibes", gradient: "linear-gradient(...)" }
 ```
 
 ### 3. Effect Recommendation
@@ -148,20 +142,7 @@ Returns:
 - Response parsing
 - Error handling
 - Type safety
-
-### database.ts (Persistence)
-- SQLite database management
-- Palette CRUD operations
-- Playlist CRUD operations
-- Custom preset storage
-- Schema initialization
-
-### colors.ts (Color Library)
-- 50+ named colors
-- 15+ gradients
-- Color utilities (hex/RGB conversion)
-- Blending and gradient generation
-- Category organization
+- LedFX `/api/colors` support
 
 ### ai-helper.ts (Intelligence)
 - Natural language parsing
@@ -172,19 +153,11 @@ Returns:
 
 ## Key Design Decisions
 
-### 1. Why SQLite for Palettes?
-- LedFX API doesn't support palettes
-- Need persistent local storage
-- Simple, embedded database
-- No server required
-- Fast local queries
-
-### 2. Why Separate Color Library?
-- Reusable across features
-- Easy to extend
-- Category organization
-- No API dependency
-- Instant lookups
+### 1. Why LedFX /api/colors for Palettes?
+- Single source of truth in LedFX
+- Builtin + user-defined colors and gradients
+- No local persistence layer required
+- Consistent with LedFX UI and API
 
 ### 3. Why AI Helper Module?
 - Natural language is complex
@@ -202,14 +175,12 @@ Returns:
 ## Performance Characteristics
 
 ### Response Times
-- Color lookup: <1ms (in-memory)
-- Database operations: <10ms (SQLite)
+- Color lookup: 10-100ms (LedFX /api/colors)
 - API calls: 10-100ms (network)
 - NLP parsing: 1-5ms (simple regex)
 
 ### Memory Usage
-- Color library: ~50KB (preloaded)
-- Database connection: ~1MB (lazy)
+- No local color library or database
 - Total footprint: <10MB
 
 ### Scalability
@@ -282,12 +253,6 @@ Database → Sync Service → Cloud Storage
 
 ## Security Considerations
 
-### Database
-- Local file system only
-- User permissions respected
-- Prepared statements (SQL injection safe)
-- No network exposure
-
 ### API Communication
 - Local network assumed (localhost)
 - HTTP only (no auth needed)
@@ -309,11 +274,6 @@ npm run build
 # Configure Claude Desktop with path to dist/index.js
 ```
 
-### Database Location
-```
-~/.ledfx-mcp/palettes.db
-```
-
 ### Configuration
 ```json
 {
@@ -328,14 +288,6 @@ npm run build
 - stderr for debug messages
 - stdout for MCP protocol
 - Error context included
-
-### Database Inspection
-```bash
-sqlite3 ~/.ledfx-mcp/palettes.db
-.tables
-.schema palettes
-SELECT * FROM palettes;
-```
 
 ### API Testing
 ```bash

@@ -22,45 +22,13 @@ A comprehensive MCP (Model Context Protocol) server for LedFX that goes far beyo
 - Activate/deactivate virtuals
 - Full virtual lifecycle management
 
-### 2. **Palette Management System** ✅ (SQLite Database)
+### 2. **Color and Palette Management** ✅ (LedFX /api/colors)
 
 **Features:**
-- Store custom color palettes locally
-- Organize by categories (nature, tech, pastel, etc.)
-- Full CRUD operations (Create, Read, Update, Delete)
-- Persistent across sessions
-- Linked to effects and presets
-
-**Database Location:** `~/.ledfx-mcp/palettes.db`
-
-**Tables:**
-- `palettes` - Color collections
-- `playlists` - Scene sequences
-- `custom_presets` - Effect configurations
-
-### 3. **Comprehensive Color Library** ✅
-
-**50+ Named Colors:**
-- Basic: red, blue, green, yellow, etc.
-- Extended: orange, purple, pink, gold, etc.
-- Vivid: crimson, emerald, sapphire, indigo, etc.
-- Pastel: pastel-pink, pastel-blue, etc.
-- Neon: neon-pink, neon-green, etc.
-
-**15+ Gradients:**
-- Nature: sunset, ocean, forest, tropical, spring, autumn
-- Energy: fire, lava
-- Cosmic: aurora, galaxy
-- Tech: cyber, neon-nights
-- Classic: rainbow
-- Cool: ice
-- Sweet: candy
-
-**Color Utilities:**
-- Hex ↔ RGB conversion
-- Color blending
-- Gradient generation
-- Category filtering
+- Uses LedFX `/api/colors` as the single source of truth
+- Supports builtin + user-defined colors and gradients
+- Full CRUD for colors/gradients via MCP tools
+- Palettes stored as user gradients with `palette:<name>` IDs
 
 ### 4. **AI-Powered Natural Language Processing** ✅
 
@@ -174,9 +142,9 @@ Recommendations:
 
 **Colors (4 tools):**
 - ledfx_list_colors
-- ledfx_find_color
-- ledfx_list_gradients
-- ledfx_find_gradient
+- ledfx_get_color_or_gradient
+- ledfx_upsert_color_or_gradient
+- ledfx_delete_color_or_gradient
 
 **AI Features (3 tools):**
 - ledfx_recommend_effects
@@ -196,20 +164,13 @@ Recommendations:
 src/
 ├── index.ts           # MCP server entry point
 ├── ledfx-client.ts    # LedFX API client (corrected endpoints)
-├── tools.ts           # 35 MCP tool definitions
-├── colors.ts          # Color & gradient library
-├── database.ts        # SQLite palette management
+├── tools.ts           # MCP tool definitions
 └── ai-helper.ts       # NLP & recommendations
 ```
 
 ### Dependencies Added
 
-```json
-{
-  "better-sqlite3": "^12.6.2",
-  "@types/better-sqlite3": "^7.6.13"
-}
-```
+No additional runtime dependencies beyond the MCP SDK.
 
 ### Build & Quality
 
@@ -219,49 +180,9 @@ src/
 ✅ All modules properly typed  
 ✅ Demo script runs successfully  
 
-### Database Schema
+### LedFX Colors Storage
 
-**palettes table:**
-```sql
-CREATE TABLE palettes (
-  id INTEGER PRIMARY KEY,
-  name TEXT UNIQUE,
-  description TEXT,
-  colors TEXT (JSON),
-  gradient TEXT (JSON),
-  category TEXT,
-  created_at DATETIME,
-  updated_at DATETIME
-)
-```
-
-**playlists table:**
-```sql
-CREATE TABLE playlists (
-  id INTEGER PRIMARY KEY,
-  name TEXT UNIQUE,
-  description TEXT,
-  scenes TEXT (JSON array),
-  transition_time INTEGER,
-  loop BOOLEAN,
-  created_at DATETIME,
-  updated_at DATETIME
-)
-```
-
-**custom_presets table:**
-```sql
-CREATE TABLE custom_presets (
-  id INTEGER PRIMARY KEY,
-  name TEXT,
-  effect_type TEXT,
-  config TEXT (JSON),
-  palette_id INTEGER,
-  description TEXT,
-  created_at DATETIME,
-  updated_at DATETIME
-)
-```
+Palettes, colors, and gradients are stored directly in LedFX via `/api/colors`.
 
 ## Usage Examples
 
@@ -279,9 +200,9 @@ MCP: ✓ Parses description
 
 ```
 User: "Create a palette called 'Sunset Vibes' with orange, pink, and purple"
-MCP: ✓ Stores in SQLite
-     ✓ Returns palette ID
-     ✓ Available for future use
+MCP: ✓ Stores as user gradient in /api/colors
+   ✓ Returns palette ID (palette:Sunset Vibes)
+   ✓ Available in LedFX
 ```
 
 ### Effect Recommendations
@@ -339,17 +260,15 @@ MCP: "Virtuals are logical LED strips that can span one or more
 
 ✅ **Deep Modules:** Simple interfaces, complex implementation
 - LedFxClient hides all HTTP complexity
-- Database module abstracts SQLite operations
+- LedFX /api/colors provides centralized color storage
 - AI helper encapsulates NLP logic
 
 ✅ **Information Hiding:** Implementation details abstracted
-- Color library hides RGB/hex conversions
 - Scene parser hides keyword extraction
-- Database hides SQL queries
+- LedFX /api/colors hides color/gradient persistence
 
 ✅ **Minimize Complexity:** Each module focused
-- colors.ts = color data only
-- database.ts = persistence only
+- ledfx-client.ts = LedFX API access
 - ai-helper.ts = NLP/recommendations only
 
 ## Documentation
@@ -399,12 +318,10 @@ MCP: "Virtuals are logical LED strips that can span one or more
 
 ## Performance
 
-### Database
+### Colors
 
-- SQLite: Fast local storage
-- Indexed queries
-- Minimal disk I/O
-- Auto-vacuum enabled
+- LedFX /api/colors is the single source of truth
+- No local persistence layer
 
 ### API Calls
 
@@ -415,18 +332,10 @@ MCP: "Virtuals are logical LED strips that can span one or more
 
 ### Memory
 
-- Color library: Pre-loaded (small footprint)
-- Database: Lazy connection
+- No local color library or database
 - Caching where appropriate
 
 ## Security Considerations
-
-### SQLite Database
-
-- Local file system only
-- No network exposure
-- User permissions respected
-- Safe from injection (prepared statements)
 
 ### API Communication
 
@@ -466,12 +375,12 @@ MCP: "Virtuals are logical LED strips that can span one or more
 
 ### Feature Completeness
 
-- ✅ 35 MCP tools implemented
+- ✅ MCP tools implemented
 - ✅ Natural language parsing (working)
-- ✅ Palette management (SQLite-backed)
+- ✅ Palette management (LedFX /api/colors)
 - ✅ Effect recommendations (AI-powered)
 - ✅ Feature explanations (comprehensive)
-- ✅ Color library (50+ colors, 15+ gradients)
+- ✅ LedFX colors/gradients (builtin + user)
 
 ### User Experience
 
@@ -486,10 +395,10 @@ MCP: "Virtuals are logical LED strips that can span one or more
 This implementation delivers a **production-ready, feature-rich MCP server** for LedFX that:
 
 1. **Fixes critical API bugs** from the initial implementation
-2. **Adds palette management** not available in LedFX API
+2. **Adds palette management** on top of LedFX /api/colors
 3. **Enables natural language** scene creation
 4. **Provides AI-powered** recommendations and explanations
-5. **Includes comprehensive** color and gradient libraries
+5. **Uses LedFX-native** colors and gradients
 6. **Supports playlists** for automated scene sequences
 7. **Documents everything** thoroughly for users
 

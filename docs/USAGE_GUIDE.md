@@ -9,7 +9,7 @@
 2. [Natural Language Scene Creation](#natural-language-scene-creation)
 3. [Palette Management](#palette-management)
 4. [Playlist Management](#playlist-management)
-5. [Color Library](#color-library)
+5. [Color Management](#color-management-ledfx-apicolors)
 6. [Effect Recommendations](#effect-recommendations)
 7. [Learning LedFX](#learning-ledfx)
 8. [Advanced Usage](#advanced-usage)
@@ -22,7 +22,7 @@
 **Virtuals** → Logical LED strips where effects are applied  
 **Effects** → Visual patterns (rainbow, pulse, etc.)  
 **Scenes** → Saved configurations of multiple virtuals + effects  
-**Palettes** → Custom color collections (managed by this MCP)  
+**Palettes** → Named gradients stored in LedFX `/api/colors`  
 
 **IMPORTANT:** Effects are applied to **virtuals**, not devices!
 
@@ -134,12 +134,12 @@ Creates:
 - romantic, mood → tag: mood
 
 **Colors:**
-- Any of 50+ named colors (crimson, ocean, neon-pink, etc.)
-- Gradients (sunset, ocean, fire, aurora, galaxy, etc.)
+- Any LedFX color IDs from `/api/colors`
+- Any LedFX gradient IDs from `/api/colors`
 
 ## Palette Management
 
-Palettes are custom color collections stored locally in SQLite.
+Palettes are stored as **user gradients** in LedFX `/api/colors`. Each palette is saved with the ID `palette:<name>` and a value of a `linear-gradient(...)` string.
 
 ### Create a Palette
 
@@ -149,18 +149,13 @@ Palettes are custom color collections stored locally in SQLite.
 
 Or using named colors:
 ```
-"Create a palette named 'Neon Dreams' with neon-pink, neon-green, neon-blue, and neon-purple"
+"Create a palette named 'Neon Dreams' with #FF10F0, #39FF14, #1B03A3, and #BC13FE"
 ```
 
 ### List Palettes
 
 ```
 "List all my palettes"
-```
-
-Filter by category:
-```
-"Show me all nature-themed palettes"
 ```
 
 ### Get Palette Details
@@ -178,7 +173,7 @@ Filter by category:
 ### Delete a Palette
 
 ```
-"Delete palette #5"
+"Delete palette 'Tropical Paradise'"
 ```
 
 ## Playlist Management
@@ -209,62 +204,32 @@ Playlists are sequences of scenes that play automatically.
 - **Looping**: Whether to repeat the playlist
 - **Scene order**: Specific sequence of scenes
 
-## Color Library
+## Color Management (LedFX /api/colors)
 
-### Named Colors (50+)
+LedFX exposes builtin and user-defined colors/gradients via `/api/colors`. This MCP uses those types directly.
 
-**Basic:** black, white, red, green, blue, yellow, cyan, magenta
-
-**Extended:** orange, purple, pink, brown, gray, silver, gold
-
-**Vivid:** crimson, scarlet, coral, emerald, jade, turquoise, sapphire, indigo, violet
-
-**Pastel:** pastel-pink, pastel-blue, pastel-green, pastel-purple
-
-**Neon:** neon-pink, neon-green, neon-blue, neon-yellow, neon-purple
-
-### Using Named Colors
+### List Colors and Gradients
 
 ```
-"Find the crimson color"
+"List all LedFX colors and gradients"
 ```
 
-```
-"List all neon colors"
-```
+### Get a Specific Color or Gradient
 
 ```
-"Set effect to neon-pink on my strip"
+"Get color or gradient 'sunset'"
 ```
 
-### Gradients (15+)
-
-**Classic:** rainbow
-
-**Nature:** sunset, ocean, forest, spring, autumn, tropical
-
-**Energy:** fire, lava
-
-**Cool:** ice
-
-**Cosmic:** aurora, galaxy
-
-**Tech:** cyber, neon-nights
-
-**Sweet:** candy
-
-### Using Gradients
+### Create or Update a User Color
 
 ```
-"List all available gradients"
+"Create a user color 'my-magenta' = #FF00FF"
 ```
 
-```
-"Apply the sunset gradient to my virtual"
-```
+### Create or Update a User Gradient
 
 ```
-"Show me nature-themed gradients"
+"Create a user gradient 'my-sunset' = linear-gradient(90deg, #ff0000, #0000ff)"
 ```
 
 ## Effect Recommendations
@@ -571,11 +536,9 @@ Check scene exists:
 "List all my scenes"
 ```
 
-### Database Issues
+### LedFX Colors Storage
 
-Database is stored at `~/.ledfx-mcp/palettes.db`
-
-If corrupted, delete and restart to recreate.
+User-defined colors, gradients, and palettes are stored in LedFX itself via `/api/colors`.
 
 ## Example Session
 
@@ -593,8 +556,8 @@ MCP: [Creates scene with blue gradient, slow speed]
 You: "List all ocean gradients"
 MCP: [Shows ocean, tropical, and other water-themed gradients]
 
-You: "Create a palette called 'My Ocean' with turquoise, aqua, and navy"
-MCP: "Palette 'My Ocean' created with ID 1"
+You: "Create a palette called 'My Ocean' with #40E0D0, #00FFFF, and #000080"
+MCP: "Palette 'My Ocean' created with ID palette:My Ocean"
 
 You: "Explain what audio-reactive means"
 MCP: [Detailed explanation of audio-reactive effects]

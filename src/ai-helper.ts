@@ -4,7 +4,10 @@
  * Provides intelligent parsing and explanation capabilities for LedFX features
  */
 
-import { NAMED_COLORS, GRADIENTS } from "./colors.js";
+export interface LedFxColorCatalog {
+  colors: Record<string, string>;
+  gradients: Record<string, string>;
+}
 
 /**
  * Scene description parser result
@@ -52,7 +55,7 @@ export const FEATURE_EXPLANATIONS: Record<string, string> = {
   
   "segments": `Segments allow you to map portions of a virtual to specific ranges of LEDs on physical devices. This lets you create complex arrangements where a single virtual spans multiple devices or where multiple virtuals share the same device.`,
   
-  "palettes": `Palettes (managed by this MCP server) are collections of colors that you can save and reuse across different effects. Create custom color schemes and apply them consistently across your LED setup.`,
+  "colors": `LedFX supports user-defined colors and gradients through the /api/colors endpoint. Colors are hex strings like #FF00FF, and gradients are CSS gradient strings like "linear-gradient(90deg, #ff0000, #0000ff)".`,
   
   "gradients": `Gradients are smooth transitions between multiple colors. Many effects can use gradients instead of single colors, creating more dynamic and visually interesting patterns.`,
   
@@ -142,7 +145,10 @@ export const EFFECT_TYPES: Record<string, {
 /**
  * Parse natural language scene description
  */
-export function parseSceneDescription(description: string): ParsedSceneDescription {
+export function parseSceneDescription(
+  description: string,
+  catalog: LedFxColorCatalog
+): ParsedSceneDescription {
   const result: ParsedSceneDescription = {
     sceneName: "",
     virtuals: [],
@@ -164,15 +170,15 @@ export function parseSceneDescription(description: string): ParsedSceneDescripti
 
   // Look for colors
   const colors: string[] = [];
-  for (const [name, colorInfo] of Object.entries(NAMED_COLORS)) {
+  for (const [name, value] of Object.entries(catalog.colors)) {
     if (description.toLowerCase().includes(name.toLowerCase())) {
-      colors.push(colorInfo.hex);
+      colors.push(value);
     }
   }
 
   // Look for gradients
   let gradient: string | undefined;
-  for (const [name] of Object.entries(GRADIENTS)) {
+  for (const [name] of Object.entries(catalog.gradients)) {
     if (description.toLowerCase().includes(name.toLowerCase())) {
       gradient = name;
       break;
@@ -212,9 +218,9 @@ export function parseSceneDescription(description: string): ParsedSceneDescripti
 
   // Add gradient if found
   if (gradient) {
-    const gradientInfo = GRADIENTS[gradient];
-    if (gradientInfo) {
-      config.gradient = gradientInfo.colors;
+    const gradientValue = catalog.gradients[gradient];
+    if (gradientValue) {
+      config.gradient = gradientValue;
     }
   }
 
@@ -247,7 +253,8 @@ export function parseSceneDescription(description: string): ParsedSceneDescripti
  */
 export function recommendEffects(
   description: string,
-  mood?: string
+  mood: string | undefined,
+  catalog: LedFxColorCatalog
 ): EffectRecommendation[] {
   const recommendations: EffectRecommendation[] = [];
 
@@ -285,12 +292,15 @@ export function recommendEffects(
 
   // Calm/relaxing recommendations
   if (/\b(relax|calm|chill|ambient|sleep)\b/i.test(description) || mood === "chill") {
-    recommendations.push({
-      effectType: "gradient",
-      config: { gradient: GRADIENTS["ocean"].colors, speed: 20 },
-      reason: "Slow ocean gradient creates calming atmosphere",
-      confidence: 0.85
-    });
+    const oceanGradient = catalog.gradients["ocean"];
+    if (oceanGradient) {
+      recommendations.push({
+        effectType: "gradient",
+        config: { gradient: oceanGradient, speed: 20 },
+        reason: "Slow ocean gradient creates calming atmosphere",
+        confidence: 0.85
+      });
+    }
     recommendations.push({
       effectType: "singleColor",
       config: { color: "#4B0082", brightness: 0.5 },
@@ -350,7 +360,7 @@ export function getFeatureCategories(): Record<string, string[]> {
   return {
     "Core Concepts": ["virtuals", "devices", "effects", "scenes", "presets"],
     "Audio Features": ["audio-reactive", "integration"],
-    "Visual Elements": ["palettes", "gradients", "brightness", "speed"],
+    "Visual Elements": ["colors", "gradients", "brightness", "speed"],
     "Technical": ["wled", "ddp", "fps", "pixel-count", "segments"],
   };
 }

@@ -3,7 +3,7 @@
  * 
  * Provides advanced features including:
  * - Virtual and device management
- * - Palette management (SQLite-backed)
+ * - Palette management (LedFX /api/colors)
  * - Natural language scene creation
  * - Effect recommendations
  * - LedFX feature explanations
@@ -11,26 +11,120 @@
  */
 
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { LedFxClient, LedFxBackup, RestoreOptions } from "./ledfx-client.js";
-import { getDatabase } from "./database.js";
-import { findColor, findGradient, NAMED_COLORS, GRADIENTS, getColorCategories, getGradientCategories } from "./colors.js";
-import { parseSceneDescription, recommendEffects, explainFeature, getFeatureCategories } from "./ai-helper.js";
+import { LedFxClient, LedFxBackup, RestoreOptions, LedFxColorsResponse } from "./ledfx-client.js";
+import { parseSceneDescription, recommendEffects, explainFeature, getFeatureCategories, LedFxColorCatalog } from "./ai-helper.js";
 import logger from "./logger.js";
 import * as fs from "fs";
 import * as path from "path";
 
-// ========== Effect Types for Theme Application ==========
-const THEME_EFFECT_TYPES = [
-  "energy",
-  "wavelength",
-  "pulse",
-  "scroll",
-  "strobe",
-  "real_strobe",
-  "singleColor",
-  "gradient",
-  "blade_power_plus",
-];
+const PALETTE_PREFIX = "palette:";
+
+function buildPaletteGradient(colors: string[]): string {
+  const stops = colors.join(", ");
+  return `linear-gradient(90deg, ${stops})`;
+}
+
+function buildColorCatalog(colorsResponse: LedFxColorsResponse): LedFxColorCatalog {
+  return {
+    colors: {
+      ...colorsResponse.colors.builtin,
+      ...colorsResponse.colors.user,
+    },
+    gradients: {
+      ...colorsResponse.gradients.builtin,
+      ...colorsResponse.gradients.user,
+    },
+  };
+}
+
+function getPaletteId(name: string): string {
+  return `${PALETTE_PREFIX}${name}`;
+}
+
+function listPalettes(colorsResponse: LedFxColorsResponse): Array<{ id: string; name: string; gradient: string }> {
+  const palettes: Array<{ id: string; name: string; gradient: string }> = [];
+  for (const [id, gradient] of Object.entries(colorsResponse.gradients.user)) {
+    if (id.startsWith(PALETTE_PREFIX)) {
+      palettes.push({
+        id,
+        name: id.slice(PALETTE_PREFIX.length),
+        gradient,
+      });
+    }
+  }
+  return palettes.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+interface BlenderSourceInput {
+  virtual_id: string;
+  effect_type: string;
+  effect_config?: Record<string, any>;
+}
+
+interface PaletteResolutionResult {
+  config: Record<string, any>;
+  errors: string[];
+}
+
+function resolvePaletteGradient(
+  paletteId: string,
+  colorsResponse: LedFxColorsResponse
+): string | null {
+  return (
+    colorsResponse.gradients.user[paletteId] ??
+    colorsResponse.gradients.builtin[paletteId] ??
+    null
+  );
+}
+
+function resolvePalettesInConfig(
+  config: Record<string, any>,
+  colorsResponse: LedFxColorsResponse
+): PaletteResolutionResult {
+  const errors: string[] = [];
+  const nextConfig = { ...config };
+
+  if (typeof nextConfig.gradient === "string" && nextConfig.gradient.startsWith(PALETTE_PREFIX)) {
+    const resolved = resolvePaletteGradient(nextConfig.gradient, colorsResponse);
+    if (!resolved) {
+      errors.push(`Unknown gradient palette '${nextConfig.gradient}'.`);
+    } else {
+      nextConfig.gradient = resolved;
+    }
+  }
+
+  return { config: nextConfig, errors };
+}
+
+function ensureEffectConfig(value: unknown): Record<string, any> | null {
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  return value as Record<string, any>;
+}
+
+// action: verifies LedFX applied the expected effect type to a virtual
+async function waitForEffectApplied(
+  client: LedFxClient,
+  virtualId: string,
+  expectedEffectType: string,
+  attempts = 3,
+  delayMs = 150
+): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const virtual = await client.getVirtual(virtualId);
+    const applied = virtual.effect?.type;
+    if (applied && applied.toLowerCase() === expectedEffectType.toLowerCase()) {
+      return true;
+    }
+    if (attempt < attempts - 1) {
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  return false;
+}
 
 /**
  * Comprehensive tool definitions
@@ -118,7 +212,7 @@ export const tools: Tool[] = [
   // ========== Effect Management (CORRECTED - uses virtuals) ==========
   {
     name: "ledfx_set_effect",
-    description: "Set an effect on a virtual (NOT a device). Effects control how LEDs display.",
+    description: "Set an effect on a virtual (NOT a device). Effects control how LEDs display. Use ledfx_set_blender for blender.",
     inputSchema: {
       type: "object",
       properties: {
@@ -137,6 +231,55 @@ export const tools: Tool[] = [
         },
       },
       required: ["virtual_id", "effect_type"],
+    },
+  },
+  {
+    name: "ledfx_set_blender",
+    description: "Safely set a blender effect by configuring source virtuals first. Blender mixes background + foreground using a mask; mask should be audio reactive, and at least one of background/foreground should be audio reactive. Static colors are rarely useful.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        blender_virtual_id: {
+          type: "string",
+          description: "The blender virtual id (typically 3linematrix)",
+        },
+        background: {
+          type: "object",
+          description: "Background source configuration (base layer). Prefer audio-reactive effects; static colors are rarely useful.",
+          properties: {
+            virtual_id: { type: "string" },
+            effect_type: { type: "string" },
+            effect_config: { type: "object", additionalProperties: true },
+          },
+          required: ["virtual_id", "effect_type"],
+        },
+        foreground: {
+          type: "object",
+          description: "Foreground source configuration (top layer). Prefer audio-reactive effects; static colors are rarely useful.",
+          properties: {
+            virtual_id: { type: "string" },
+            effect_type: { type: "string" },
+            effect_config: { type: "object", additionalProperties: true },
+          },
+          required: ["virtual_id", "effect_type"],
+        },
+        mask: {
+          type: "object",
+          description: "Mask source configuration (controls reveal/occlusion). Should be audio reactive for meaningful blending.",
+          properties: {
+            virtual_id: { type: "string" },
+            effect_type: { type: "string" },
+            effect_config: { type: "object", additionalProperties: true },
+          },
+          required: ["virtual_id", "effect_type"],
+        },
+        blender_config: {
+          type: "object",
+          description: "Additional blender configuration (stretch, cutoff, invert, brightness)",
+          additionalProperties: true,
+        },
+      },
+      required: ["blender_virtual_id", "background", "foreground", "mask"],
     },
   },
   {
@@ -179,6 +322,20 @@ export const tools: Tool[] = [
       type: "object",
       properties: {},
       required: [],
+    },
+  },
+  {
+    name: "ledfx_get_effect_schema",
+    description: "Get the schema for a single effect type",
+    inputSchema: {
+      type: "object",
+      properties: {
+        effect_type: {
+          type: "string",
+          description: "Effect type id (e.g., blender, wavelength, energy)",
+        },
+      },
+      required: ["effect_type"],
     },
   },
 
@@ -321,43 +478,92 @@ export const tools: Tool[] = [
     },
   },
 
-  // ========== Palette Management (SQLite-backed) ==========
+  // ========== Color Management (LedFX /api/colors) ==========
   {
-    name: "ledfx_list_palettes",
-    description: "List all saved color palettes (stored locally in SQLite)",
+    name: "ledfx_list_colors",
+    description: "List all colors and gradients from LedFX /api/colors. Returns LedFX native response types.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "ledfx_get_color_or_gradient",
+    description: "Get a single color or gradient by ID from LedFX /api/colors.",
     inputSchema: {
       type: "object",
       properties: {
-        category: {
+        id: {
           type: "string",
-          description: "Optional category filter",
+          description: "Color or gradient ID (LedFX name key)",
         },
       },
+      required: ["id"],
+    },
+  },
+  {
+    name: "ledfx_upsert_color_or_gradient",
+    description: "Create or update a user-defined color or gradient in LedFX /api/colors.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          enum: ["color", "gradient"],
+          description: "Whether this value is a color or gradient",
+        },
+        id: {
+          type: "string",
+          description: "Color or gradient ID (LedFX name key)",
+        },
+        value: {
+          type: "string",
+          description: "LedFX color string (#RRGGBB) or gradient string (CSS linear-gradient)",
+        },
+      },
+      required: ["type", "id", "value"],
+    },
+  },
+  {
+    name: "ledfx_delete_color_or_gradient",
+    description: "Delete a user-defined color or gradient by ID in LedFX /api/colors.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Color or gradient ID (LedFX name key)",
+        },
+      },
+      required: ["id"],
+    },
+  },
+
+  // ========== Palette Management (LedFX /api/colors) ==========
+  {
+    name: "ledfx_list_palettes",
+    description: "List all palettes stored as user gradients in LedFX /api/colors.",
+    inputSchema: {
+      type: "object",
+      properties: {},
       required: [],
     },
   },
   {
     name: "ledfx_create_palette",
-    description: "Create a new color palette",
+    description: "Create or update a palette by saving a user gradient in LedFX /api/colors.",
     inputSchema: {
       type: "object",
       properties: {
         name: {
           type: "string",
-          description: "Name for the palette",
+          description: "Palette name (stored as 'palette:<name>' in LedFX)",
         },
         colors: {
           type: "array",
           items: { type: "string" },
-          description: "Array of hex color codes",
-        },
-        category: {
-          type: "string",
-          description: "Optional category (e.g., 'nature', 'tech', 'pastel')",
-        },
-        description: {
-          type: "string",
-          description: "Optional description",
+          description: "Array of LedFX color strings (#RRGGBB)",
         },
       },
       required: ["name", "colors"],
@@ -365,30 +571,30 @@ export const tools: Tool[] = [
   },
   {
     name: "ledfx_get_palette",
-    description: "Get a specific palette by name or ID",
+    description: "Get a palette by name (stored as a user gradient in LedFX /api/colors).",
     inputSchema: {
       type: "object",
       properties: {
-        identifier: {
+        name: {
           type: "string",
-          description: "Palette name or ID",
+          description: "Palette name (without the 'palette:' prefix)",
         },
       },
-      required: ["identifier"],
+      required: ["name"],
     },
   },
   {
     name: "ledfx_delete_palette",
-    description: "Delete a palette",
+    description: "Delete a palette by name (removes the user gradient from LedFX /api/colors).",
     inputSchema: {
       type: "object",
       properties: {
-        palette_id: {
-          type: "number",
-          description: "Palette ID",
+        name: {
+          type: "string",
+          description: "Palette name (without the 'palette:' prefix)",
         },
       },
-      required: ["palette_id"],
+      required: ["name"],
     },
   },
 
@@ -549,134 +755,6 @@ export const tools: Tool[] = [
     },
   },
 
-  // ========== Batch Operations ==========
-  {
-    name: "ledfx_create_theme",
-    description: "Create a color theme that can be applied across multiple effects at once. Stores colors for lows/mids/highs and optional custom gradient.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: {
-          type: "string",
-          description: "Theme name",
-        },
-        color_lows: {
-          type: "string",
-          description: "Hex color for bass/low frequencies",
-        },
-        color_mids: {
-          type: "string",
-          description: "Hex color for mid frequencies",
-        },
-        color_high: {
-          type: "string",
-          description: "Hex color for high frequencies",
-        },
-        background_color: {
-          type: "string",
-          description: "Background color",
-        },
-        gradient: {
-          type: "string",
-          description: "Custom CSS gradient string (e.g., 'linear-gradient(90deg, #9900FF 0%, #00AA00 15%, #00AA00 85%, #FFFF00 100%)'). If not provided, auto-generated from colors.",
-        },
-        description: {
-          type: "string",
-          description: "Optional description",
-        },
-      },
-      required: ["name", "color_lows", "color_mids", "color_high"],
-    },
-  },
-  {
-    name: "ledfx_apply_theme",
-    description: "Apply a theme to create presets for ALL effect types and optionally create scenes for each",
-    inputSchema: {
-      type: "object",
-      properties: {
-        theme_name: {
-          type: "string",
-          description: "Name of theme to apply",
-        },
-        virtual_id: {
-          type: "string",
-          description: "Virtual to use for creating presets",
-        },
-        create_scenes: {
-          type: "boolean",
-          description: "Also create scenes for each effect (default: true)",
-        },
-      },
-      required: ["theme_name", "virtual_id"],
-    },
-  },
-  {
-    name: "ledfx_list_themes",
-    description: "List all saved color themes",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      required: [],
-    },
-  },
-
-  // ========== Color Library ==========
-  {
-    name: "ledfx_list_colors",
-    description: "List all named colors in the library with hex codes",
-    inputSchema: {
-      type: "object",
-      properties: {
-        category: {
-          type: "string",
-          description: "Optional category filter (basic, extended, vivid, pastel, neon)",
-        },
-      },
-      required: [],
-    },
-  },
-  {
-    name: "ledfx_find_color",
-    description: "Find a color by name",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: {
-          type: "string",
-          description: "Color name (e.g., 'crimson', 'ocean-blue')",
-        },
-      },
-      required: ["name"],
-    },
-  },
-  {
-    name: "ledfx_list_gradients",
-    description: "List all predefined gradients",
-    inputSchema: {
-      type: "object",
-      properties: {
-        category: {
-          type: "string",
-          description: "Optional category filter (classic, nature, energy, cool, cosmic, sweet, tech)",
-        },
-      },
-      required: [],
-    },
-  },
-  {
-    name: "ledfx_find_gradient",
-    description: "Find a gradient by name",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: {
-          type: "string",
-          description: "Gradient name (e.g., 'sunset', 'ocean', 'fire')",
-        },
-      },
-      required: ["name"],
-    },
-  },
 
   // ========== Effect Recommendations ==========
   {
@@ -863,7 +941,6 @@ export async function handleToolCall(
   args: Record<string, any>
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
   const client = getClient();
-  const db = getDatabase();
   const startTime = Date.now();
 
   // Log incoming tool call
@@ -900,6 +977,14 @@ export async function handleToolCall(
       }
 
       case "ledfx_activate_virtual": {
+        if (args.active) {
+          const virtual = await client.getVirtual(args.virtual_id);
+          if (!virtual.effect || !virtual.effect.type) {
+            return formatResponse({
+              error: `Virtual '${args.virtual_id}' has no effect. Set an effect before activation.`,
+            });
+          }
+        }
         await client.setVirtualActive(args.virtual_id, args.active);
         return formatResponse({
           success: true,
@@ -909,19 +994,138 @@ export async function handleToolCall(
 
       // ========== Effects ==========
       case "ledfx_set_effect": {
-        await client.setVirtualEffect(
+        if (args.effect_type === "blender") {
+          return formatResponse({
+            error: "Blender must be set using ledfx_set_blender.",
+          });
+        }
+
+        const effectConfig = ensureEffectConfig(args.effect_config);
+        if (!effectConfig) {
+          return formatResponse({
+            error: "effect_config must be an object.",
+          });
+        }
+
+        const colorsResponse = await client.getColors();
+        const resolved = resolvePalettesInConfig(effectConfig, colorsResponse);
+        if (resolved.errors.length > 0) {
+          return formatResponse({ error: resolved.errors.join(" ") });
+        }
+
+        await client.setVirtualEffect(args.virtual_id, args.effect_type, resolved.config);
+        const applied = await waitForEffectApplied(
+          client,
           args.virtual_id,
-          args.effect_type,
-          args.effect_config || {}
+          args.effect_type
         );
+        if (!applied) {
+          return formatResponse({
+            error: `LedFX did not apply '${args.effect_type}' to '${args.virtual_id}'.`,
+          });
+        }
         return formatResponse({
           success: true,
           message: `Effect '${args.effect_type}' set on virtual '${args.virtual_id}'`,
         });
       }
 
+      case "ledfx_set_blender": {
+        const background = args.background as BlenderSourceInput;
+        const foreground = args.foreground as BlenderSourceInput;
+        const mask = args.mask as BlenderSourceInput;
+        const sources = [background, foreground, mask];
+
+        for (const source of sources) {
+          if (!source.virtual_id || !source.effect_type) {
+            return formatResponse({
+              error: "Each blender source must include virtual_id and effect_type.",
+            });
+          }
+          if (source.effect_type === "blender") {
+            return formatResponse({
+              error: "Blender sources cannot use the blender effect.",
+            });
+          }
+        }
+
+        const colorsResponse = await client.getColors();
+
+        for (const source of sources) {
+          const effectConfig = ensureEffectConfig(source.effect_config);
+          if (!effectConfig) {
+            return formatResponse({
+              error: `effect_config must be an object for source '${source.virtual_id}'.`,
+            });
+          }
+          const resolved = resolvePalettesInConfig(effectConfig, colorsResponse);
+          if (resolved.errors.length > 0) {
+            return formatResponse({ error: resolved.errors.join(" ") });
+          }
+
+          await client.setVirtualEffect(
+            source.virtual_id,
+            source.effect_type,
+            resolved.config
+          );
+          await client.setVirtualActive(source.virtual_id, true);
+
+          const applied = await waitForEffectApplied(
+            client,
+            source.virtual_id,
+            source.effect_type
+          );
+          if (!applied) {
+            return formatResponse({
+              error: `LedFX did not apply '${source.effect_type}' to '${source.virtual_id}'.`,
+            });
+          }
+        }
+
+        const blenderConfig = {
+          background: background.virtual_id,
+          foreground: foreground.virtual_id,
+          mask: mask.virtual_id,
+          ...(args.blender_config || {}),
+        } as Record<string, any>;
+
+        await client.setVirtualEffect(args.blender_virtual_id, "blender", blenderConfig);
+        const blenderApplied = await waitForEffectApplied(
+          client,
+          args.blender_virtual_id,
+          "blender"
+        );
+        if (!blenderApplied) {
+          return formatResponse({
+            error: `LedFX did not apply 'blender' to '${args.blender_virtual_id}'.`,
+          });
+        }
+        return formatResponse({
+          success: true,
+          message: `Blender set on virtual '${args.blender_virtual_id}'`,
+          sources: {
+            background: background.virtual_id,
+            foreground: foreground.virtual_id,
+            mask: mask.virtual_id,
+          },
+        });
+      }
+
       case "ledfx_update_effect": {
-        await client.updateVirtualEffect(args.virtual_id, args.config);
+        const effectConfig = ensureEffectConfig(args.config);
+        if (!effectConfig) {
+          return formatResponse({
+            error: "config must be an object.",
+          });
+        }
+
+        const colorsResponse = await client.getColors();
+        const resolved = resolvePalettesInConfig(effectConfig, colorsResponse);
+        if (resolved.errors.length > 0) {
+          return formatResponse({ error: resolved.errors.join(" ") });
+        }
+
+        await client.updateVirtualEffect(args.virtual_id, resolved.config);
         return formatResponse({
           success: true,
           message: `Effect updated on virtual '${args.virtual_id}'`,
@@ -941,6 +1145,18 @@ export async function handleToolCall(
         return formatResponse(schemas);
       }
 
+      case "ledfx_get_effect_schema": {
+        const schemas = await client.getEffectSchemas();
+        const effectType = String(args.effect_type);
+        const schema = schemas[effectType];
+        if (!schema) {
+          return formatResponse({
+            error: `Effect schema '${effectType}' not found`,
+          });
+        }
+        return formatResponse(schema);
+      }
+
       // ========== Presets ==========
       case "ledfx_get_presets": {
         const presets = await client.getVirtualPresets(args.virtual_id);
@@ -948,15 +1164,25 @@ export async function handleToolCall(
       }
 
       case "ledfx_apply_preset": {
+        const presets = await client.getVirtualPresets(args.virtual_id);
+        const category = args.category as "ledfx_presets" | "user_presets";
+        const effectId = String(args.effect_id);
+        const presetId = String(args.preset_id);
+        const effectPresets = presets[category]?.[effectId];
+        if (!effectPresets || !(presetId in effectPresets)) {
+          return formatResponse({
+            error: `Preset '${presetId}' not found for effect '${effectId}' in ${category}.`,
+          });
+        }
         await client.applyPreset(
           args.virtual_id,
           args.category,
-          args.effect_id,
-          args.preset_id
+          effectId,
+          presetId
         );
         return formatResponse({
           success: true,
-          message: `Preset '${args.preset_id}' applied to virtual '${args.virtual_id}'`,
+          message: `Preset '${presetId}' applied to virtual '${args.virtual_id}'`,
         });
       }
 
@@ -1000,7 +1226,9 @@ export async function handleToolCall(
 
       // ========== AI Scene Creation ==========
       case "ledfx_create_scene_from_description": {
-        const parsed = parseSceneDescription(args.description);
+        const colorsResponse = await client.getColors();
+        const catalog = buildColorCatalog(colorsResponse);
+        const parsed = parseSceneDescription(args.description, catalog);
         
         // Get target virtuals
         let targetVirtuals = args.virtual_ids;
@@ -1014,6 +1242,11 @@ export async function handleToolCall(
         for (const virtualId of targetVirtuals) {
           if (parsed.virtuals.length > 0) {
             const effectConfig = parsed.virtuals[0];
+            if (effectConfig.effectType === "blender") {
+              return formatResponse({
+                error: "Blender must be set using ledfx_set_blender.",
+              });
+            }
             await client.setVirtualEffect(
               virtualId,
               effectConfig.effectType,
@@ -1031,46 +1264,6 @@ export async function handleToolCall(
           sceneName: parsed.sceneName,
           parsed: parsed,
           appliedTo: results,
-        });
-      }
-
-      // ========== Palettes ==========
-      case "ledfx_list_palettes": {
-        const palettes = args.category
-          ? db.getPalettesByCategory(args.category)
-          : db.getAllPalettes();
-        return formatResponse(palettes);
-      }
-
-      case "ledfx_create_palette": {
-        const id = db.createPalette({
-          name: args.name,
-          colors: JSON.stringify(args.colors),
-          category: args.category,
-          description: args.description,
-        });
-        return formatResponse({
-          success: true,
-          id,
-          message: `Palette '${args.name}' created`,
-        });
-      }
-
-      case "ledfx_get_palette": {
-        const palette = isNaN(Number(args.identifier))
-          ? db.getPaletteByName(args.identifier)
-          : db.getPalette(Number(args.identifier));
-        if (!palette) {
-          return formatResponse({ error: "Palette not found" });
-        }
-        return formatResponse(palette);
-      }
-
-      case "ledfx_delete_palette": {
-        db.deletePalette(args.palette_id);
-        return formatResponse({
-          success: true,
-          message: `Palette deleted`,
         });
       }
 
@@ -1165,164 +1358,108 @@ export async function handleToolCall(
         });
       }
 
-      // ========== Themes ==========
-      case "ledfx_create_theme": {
-        const id = db.createTheme({
-          name: args.name,
-          color_lows: args.color_lows,
-          color_mids: args.color_mids,
-          color_high: args.color_high,
-          background_color: args.background_color || "#000000",
-          gradient: args.gradient,
-          description: args.description,
-        });
-        return formatResponse({
-          success: true,
-          id,
-          message: `Theme '${args.name}' created`,
-        });
-      }
-
-      case "ledfx_list_themes": {
-        const themes = db.getAllThemes();
-        return formatResponse(themes);
-      }
-
-      case "ledfx_apply_theme": {
-        const theme = db.getThemeByName(args.theme_name);
-        if (!theme) {
-          return formatResponse({ error: `Theme '${args.theme_name}' not found` });
-        }
-
-        const virtualId = args.virtual_id;
-        const createScenes = args.create_scenes !== false;
-        const createdScenes: string[] = [];
-
-        // Use custom gradient if provided, otherwise build from theme colors
-        const gradient = theme.gradient || `linear-gradient(90deg, ${theme.color_lows} 0%, ${theme.color_mids} 50%, ${theme.color_high} 100%)`;
-
-        // Apply theme to each effect type and save preset
-        for (const effectType of THEME_EFFECT_TYPES) {
-          let config: Record<string, any> = {
-            background_color: theme.background_color,
-            blur: 1.5,
-            mirror: true,
-          };
-
-          // Effect-specific config
-          if (effectType === "energy" || effectType === "wavelength") {
-            config = {
-              ...config,
-              color_lows: theme.color_lows,
-              color_mids: theme.color_mids,
-              color_high: theme.color_high,
-              frequency_range: "Lows (beat+bass)",
-              sensitivity: 0.8,
-            };
-          } else if (effectType === "pulse") {
-            config = {
-              ...config,
-              color: theme.color_mids,
-              decay: 0.5,
-              sensitivity: 0.8,
-            };
-          } else if (effectType === "scroll" || effectType === "gradient") {
-            config = {
-              ...config,
-              gradient,
-              speed: 3,
-            };
-          } else if (effectType === "strobe" || effectType === "real_strobe") {
-            config = {
-              ...config,
-              gradient,
-              strobe_color: theme.color_high,
-              strobe_decay_rate: 0.5,
-            };
-          } else if (effectType === "singleColor") {
-            config = {
-              ...config,
-              color: theme.color_mids,
-              modulate: true,
-              modulation_effect: "sine",
-              modulation_speed: 0.5,
-            };
-          } else if (effectType === "blade_power_plus") {
-            config = {
-              ...config,
-              gradient,
-              frequency_range: "Lows (beat+bass)",
-              decay: 0.5,
-              background_brightness: 0.5,
-            };
-          }
-
-          // Set effect and save preset
-          await client.setVirtualEffect(virtualId, effectType, config);
-          await client.savePreset(virtualId, theme.name);
-
-          // Create scene if requested
-          if (createScenes) {
-            const sceneName = `${theme.name}-${effectType}`;
-            try {
-              await client.createScene(sceneName, `${theme.name},${effectType}`);
-              createdScenes.push(sceneName);
-            } catch {
-              // Scene might already exist, try to delete and recreate
-              try {
-                await client.deleteScene(sceneName);
-                await client.createScene(sceneName, `${theme.name},${effectType}`);
-                createdScenes.push(sceneName);
-              } catch {
-                // Ignore if scene operations fail
-              }
-            }
-          }
-        }
-
-        return formatResponse({
-          success: true,
-          theme: theme.name,
-          presetsCreated: THEME_EFFECT_TYPES.length,
-          scenesCreated: createdScenes.length,
-          scenes: createdScenes,
-        });
-      }
-
-      // ========== Colors ==========
+      // ========== Colors (LedFX /api/colors) ==========
       case "ledfx_list_colors": {
-        const colors = args.category
-          ? Object.values(NAMED_COLORS).filter(c => c.category === args.category)
-          : Object.values(NAMED_COLORS);
-        return formatResponse({ colors, categories: getColorCategories() });
+        const colors = await client.getColors();
+        return formatResponse(colors);
       }
 
-      case "ledfx_find_color": {
-        const color = findColor(args.name);
-        if (!color) {
-          return formatResponse({ error: `Color '${args.name}' not found` });
+      case "ledfx_get_color_or_gradient": {
+        const colors = await client.getColors();
+        const id = args.id as string;
+
+        const colorValue = colors.colors.user[id] ?? colors.colors.builtin[id];
+        if (colorValue) {
+          return formatResponse({
+            id,
+            type: "color",
+            scope: colors.colors.user[id] ? "user" : "builtin",
+            value: colorValue,
+          });
         }
-        return formatResponse(color);
+
+        const gradientValue = colors.gradients.user[id] ?? colors.gradients.builtin[id];
+        if (gradientValue) {
+          return formatResponse({
+            id,
+            type: "gradient",
+            scope: colors.gradients.user[id] ? "user" : "builtin",
+            value: gradientValue,
+          });
+        }
+
+        return formatResponse({ error: `Color or gradient '${id}' not found` });
       }
 
-      case "ledfx_list_gradients": {
-        const gradients = args.category
-          ? Object.values(GRADIENTS).filter(g => g.category === args.category)
-          : Object.values(GRADIENTS);
-        return formatResponse({ gradients, categories: getGradientCategories() });
+      case "ledfx_upsert_color_or_gradient": {
+        await client.upsertColors({
+          [args.id]: args.value,
+        });
+        return formatResponse({
+          success: true,
+          type: args.type,
+          message: `Color or gradient '${args.id}' upserted`,
+        });
       }
 
-      case "ledfx_find_gradient": {
-        const gradient = findGradient(args.name);
+      case "ledfx_delete_color_or_gradient": {
+        await client.deleteColor(args.id);
+        return formatResponse({
+          success: true,
+          message: `Color or gradient '${args.id}' deleted`,
+        });
+      }
+
+      // ========== Palettes (LedFX /api/colors) ==========
+      case "ledfx_list_palettes": {
+        const colors = await client.getColors();
+        return formatResponse({
+          palettes: listPalettes(colors),
+        });
+      }
+
+      case "ledfx_create_palette": {
+        const paletteId = getPaletteId(args.name);
+        const gradient = buildPaletteGradient(args.colors as string[]);
+        await client.upsertColors({
+          [paletteId]: gradient,
+        });
+        return formatResponse({
+          success: true,
+          id: paletteId,
+          name: args.name,
+          gradient,
+        });
+      }
+
+      case "ledfx_get_palette": {
+        const colors = await client.getColors();
+        const paletteId = getPaletteId(args.name);
+        const gradient = colors.gradients.user[paletteId];
         if (!gradient) {
-          return formatResponse({ error: `Gradient '${args.name}' not found` });
+          return formatResponse({ error: `Palette '${args.name}' not found` });
         }
-        return formatResponse(gradient);
+        return formatResponse({
+          id: paletteId,
+          name: args.name,
+          gradient,
+        });
+      }
+
+      case "ledfx_delete_palette": {
+        const paletteId = getPaletteId(args.name);
+        await client.deleteColor(paletteId);
+        return formatResponse({
+          success: true,
+          message: `Palette '${args.name}' deleted`,
+        });
       }
 
       // ========== Recommendations ==========
       case "ledfx_recommend_effects": {
-        const recommendations = recommendEffects(args.description, args.mood);
+        const colorsResponse = await client.getColors();
+        const catalog = buildColorCatalog(colorsResponse);
+        const recommendations = recommendEffects(args.description, args.mood, catalog);
         return formatResponse(recommendations);
       }
 

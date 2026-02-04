@@ -315,8 +315,6 @@ npm test
 - `src/index.ts` - MCP server implementation
 - `src/ledfx-client.ts` - Extended with virtual methods, fixed endpoints
 - `src/tools.ts` - Completely rewritten with 35 tools
-- `src/colors.ts` - NEW: Color library
-- `src/database.ts` - NEW: SQLite palette management
 - `src/ai-helper.ts` - NEW: NLP and recommendations
 - `tests/` - NEW: Comprehensive test suite
 

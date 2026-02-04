@@ -22,8 +22,8 @@ This MCP server provides a bridge between AI assistants (like Claude) and LedFX,
 - 📊 Query device and system information
 - 🔒 Type-safe TypeScript implementation
 - 🏗️ Built following software design best practices
-- 🎨 **Comprehensive color library** with 50+ named colors and gradients
-- 🗄️ **Palette management** with local SQLite database
+- 🎨 **LedFX colors & gradients** via `/api/colors` (builtin + user-defined)
+- 🗂️ **Palette management** stored as user gradients in LedFX
 - 🤖 **AI-powered scene creation** from natural language descriptions
 - 📝 **Playlist support** for scene sequences
 - 💡 **Effect recommendations** based on mood and description
@@ -48,12 +48,12 @@ This project follows principles from:
 
 **Current Status:** Implemented with Comprehensive Test Suite
 
-This MCP server is fully implemented against the official LedFX 2.1.2 API and validated with 66 automated tests plus continuous integration checks. The implementation fixes critical API issues (virtuals vs devices) and adds advanced features like palette management, natural language scene creation, and AI-powered recommendations.
+This MCP server is fully implemented against the official LedFX 2.1.2 API and validated with 34 automated tests plus continuous integration checks. The implementation fixes critical API issues (virtuals vs devices) and adds advanced features like palette management, natural language scene creation, and AI-powered recommendations.
 
 ### Important Notes
 
 1. **API Corrections Applied:** Effects are now correctly applied to virtuals (not devices), matching LedFX 2.1.2 API
-2. **Comprehensive Testing:** 66 tests covering unit, integration, and E2E scenarios - all passing
+2. **Comprehensive Testing:** 34 tests covering unit and E2E scenarios - all passing
 3. **CI/CD Pipeline:** GitHub Actions workflow with lint, build, test, and coverage jobs
 4. **Production Ready:** Fully documented with installation guide, usage examples, and architecture docs
 
@@ -179,10 +179,10 @@ Once configured, you can interact with your LedFX setup through natural language
 - "Build a focus scene with steady white light at medium brightness"
 
 **Color and Palette Management:**
-- "Show me all neon colors"
-- "Find the crimson color"
-- "List all available gradients"
-- "Create a new palette called 'Sunset Vibes' with orange, pink, and purple"
+- "List all LedFX colors and gradients"
+- "Get color or gradient 'sunset'"
+- "Create a user color 'my-magenta' = #FF00FF"
+- "Create a new palette called 'Sunset Vibes' with #FFA500, #FF69B4, #800080"
 - "Save a playlist of my party scenes"
 
 **Effect Recommendations:**
@@ -199,7 +199,7 @@ Once configured, you can interact with your LedFX setup through natural language
 
 ## Available Tools
 
-The server exposes 35 MCP tools organized into categories:
+The server exposes 40+ MCP tools organized into categories:
 
 ### Core Management
 | Tool | Description |
@@ -228,13 +228,13 @@ The server exposes 35 MCP tools organized into categories:
 | `ledfx_delete_scene` | Delete a saved scene |
 | `ledfx_create_scene_from_description` | **AI-powered scene creation from natural language** |
 
-### Palette Management (SQLite-backed)
+### Palette Management (LedFX /api/colors)
 | Tool | Description |
 |------|-------------|
-| `ledfx_list_palettes` | List all saved palettes |
-| `ledfx_create_palette` | Create a new color palette |
-| `ledfx_get_palette` | Get specific palette |
-| `ledfx_delete_palette` | Delete a palette |
+| `ledfx_list_palettes` | List all palettes stored as user gradients |
+| `ledfx_create_palette` | Create/update a palette (stored as user gradient) |
+| `ledfx_get_palette` | Get palette by name |
+| `ledfx_delete_palette` | Delete a palette by name |
 
 ### Playlist Management
 | Tool | Description |
@@ -244,13 +244,13 @@ The server exposes 35 MCP tools organized into categories:
 | `ledfx_get_playlist` | Get specific playlist |
 | `ledfx_delete_playlist` | Delete a playlist |
 
-### Color Library
+### Color Management (LedFX /api/colors)
 | Tool | Description |
 |------|-------------|
-| `ledfx_list_colors` | List 50+ named colors by category |
-| `ledfx_find_color` | Find color by name |
-| `ledfx_list_gradients` | List predefined gradients |
-| `ledfx_find_gradient` | Find gradient by name |
+| `ledfx_list_colors` | List all colors and gradients from LedFX |
+| `ledfx_get_color_or_gradient` | Get a specific color or gradient by ID |
+| `ledfx_upsert_color_or_gradient` | Create/update a user color or gradient |
+| `ledfx_delete_color_or_gradient` | Delete a user color or gradient |
 
 ### AI Features
 | Tool | Description |

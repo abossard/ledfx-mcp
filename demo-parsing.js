@@ -6,9 +6,25 @@
  */
 
 import { parseSceneDescription, recommendEffects, explainFeature } from './dist/ai-helper.js';
-import { findColor, findGradient } from './dist/colors.js';
+import { createLedFxClient } from './dist/ledfx-client.js';
 
 console.log('=== LedFX MCP Natural Language Demo ===\n');
+
+const client = createLedFxClient();
+
+async function loadCatalog() {
+  const colorsResponse = await client.getColors();
+  return {
+    colors: {
+      ...colorsResponse.colors.builtin,
+      ...colorsResponse.colors.user,
+    },
+    gradients: {
+      ...colorsResponse.gradients.builtin,
+      ...colorsResponse.gradients.user,
+    },
+  };
+}
 
 // Demo 1: Scene Parsing
 console.log('📝 DEMO 1: Natural Language Scene Parsing\n');
@@ -20,9 +36,11 @@ const descriptions = [
   "Create a focus scene with steady white light at medium brightness"
 ];
 
+const catalog = await loadCatalog();
+
 descriptions.forEach(desc => {
   console.log(`Input: "${desc}"`);
-  const parsed = parseSceneDescription(desc);
+  const parsed = parseSceneDescription(desc, catalog);
   console.log('Parsed:', JSON.stringify(parsed, null, 2));
   console.log('---\n');
 });
@@ -37,7 +55,7 @@ const moods = [
 
 moods.forEach(({ desc, mood }) => {
   console.log(`Query: "${desc}"`);
-  const recommendations = recommendEffects(desc, mood);
+  const recommendations = recommendEffects(desc, mood, catalog);
   console.log('Recommendations:');
   recommendations.forEach(rec => {
     console.log(`  - ${rec.effectType}: ${rec.reason} (${Math.round(rec.confidence * 100)}%)`);
@@ -45,26 +63,17 @@ moods.forEach(({ desc, mood }) => {
   console.log('---\n');
 });
 
-// Demo 3: Color Lookups
-console.log('\n🎨 DEMO 3: Color Library\n');
+// Demo 3: Colors and Gradients from LedFX
+console.log('\n🎨 DEMO 3: LedFX Colors & Gradients\n');
 
-const colorNames = ['crimson', 'neon-pink', 'turquoise', 'pastel-blue'];
-colorNames.forEach(name => {
-  const color = findColor(name);
-  if (color) {
-    console.log(`${name}: ${color.hex} RGB(${color.rgb.join(',')}) [${color.category}]`);
-  }
+Object.entries(catalog.colors).slice(0, 4).forEach(([name, value]) => {
+  console.log(`${name}: ${value}`);
 });
 
-console.log('\n📊 DEMO 4: Gradient Library\n');
+console.log('\n📊 DEMO 4: LedFX Gradients\n');
 
-const gradientNames = ['sunset', 'ocean', 'fire', 'aurora'];
-gradientNames.forEach(name => {
-  const gradient = findGradient(name);
-  if (gradient) {
-    console.log(`${name}: ${gradient.description} [${gradient.category}]`);
-    console.log(`  Colors: ${gradient.colors.join(', ')}`);
-  }
+Object.entries(catalog.gradients).slice(0, 4).forEach(([name, value]) => {
+  console.log(`${name}: ${value}`);
 });
 
 // Demo 5: Feature Explanations

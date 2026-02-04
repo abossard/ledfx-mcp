@@ -63,6 +63,28 @@ export interface EffectSchema {
   };
 }
 
+export interface LedFxColorsResponse {
+  colors: {
+    builtin: Record<string, string>;
+    user: Record<string, string>;
+  };
+  gradients: {
+    builtin: Record<string, string>;
+    user: Record<string, string>;
+  };
+}
+
+export interface LedFxColorsResponse {
+  colors: {
+    builtin: Record<string, string>;
+    user: Record<string, string>;
+  };
+  gradients: {
+    builtin: Record<string, string>;
+    user: Record<string, string>;
+  };
+}
+
 // ========== Backup/Restore Types ==========
 
 export interface BackupVirtualEffect {
@@ -275,7 +297,21 @@ export class LedFxClient {
    * Get a specific virtual (action)
    */
   async getVirtual(virtualId: string): Promise<LedFxVirtual> {
-    return await this.request(`/virtuals/${virtualId}`);
+    const response = await this.request<any>(`/virtuals/${virtualId}`);
+
+    if (response && typeof response === "object") {
+      if (response.effect) {
+        return response as LedFxVirtual;
+      }
+      if (response.virtual) {
+        return response.virtual as LedFxVirtual;
+      }
+      if (response[virtualId]) {
+        return response[virtualId] as LedFxVirtual;
+      }
+    }
+
+    return response as LedFxVirtual;
   }
 
   /**
@@ -484,6 +520,34 @@ export class LedFxClient {
     devices: Record<string, string>;
   }> {
     return await this.request("/audio/devices");
+  }
+
+  /**
+   * Get all colors and gradients (action)
+   */
+  async getColors(): Promise<LedFxColorsResponse> {
+    return await this.request("/colors");
+  }
+
+  /**
+   * Create or update user-defined colors or gradients (action)
+   */
+  async upsertColors(payload: Record<string, string>): Promise<void> {
+    await this.request("/colors", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Delete a specific user-defined color or gradient (action)
+   */
+  async deleteColor(colorId: string): Promise<void> {
+    await this.request(`/colors/${encodeURIComponent(colorId)}`,
+      {
+        method: "DELETE",
+      }
+    );
   }
 
   /**

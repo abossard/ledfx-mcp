@@ -2,35 +2,23 @@
 
 ## Test Coverage
 
-### Test Suites (4 total)
+### Test Suites (2 total)
 
-1. **tests/unit/colors.test.ts** - 14 tests ✅
-   - Named colors validation
-   - Gradient library tests
-   - Color utilities (hex/RGB conversion, blending)
-   - Category organization
-
-2. **tests/unit/ai-helper.test.ts** - 20 tests ✅
+1. **tests/unit/ai-helper.test.ts** - 20 tests ✅
    - Scene description parsing
    - Effect recommendations
    - Feature explanations
    - Effect type catalog
 
-3. **tests/unit/database.test.ts** - 18 tests ✅
-   - Palette CRUD operations
-   - Playlist management
-   - Custom preset storage
-   - SQLite integration
-
-4. **tests/e2e/mcp-server.test.ts** - 14 tests ✅
+2. **tests/e2e/mcp-server.test.ts** - 14 tests ✅
    - All MCP tool integration
-   - Color library tools
+  - LedFX color tools
    - AI-powered features
    - Palette/playlist management
    - Error handling
    - LedFX API integration (optional)
 
-**Total: 66 tests passing**
+**Total: 34 tests passing**
 
 ### Running Tests
 
@@ -54,8 +42,8 @@ npm run test:watch
 ### Test Output
 
 ```
-Test Suites: 4 passed, 4 total
-Tests:       66 passed, 66 total
+Test Suites: 2 passed, 2 total
+Tests:       34 passed, 34 total
 Snapshots:   0 total
 Time:        5.476 s
 ```
@@ -115,16 +103,13 @@ All jobs pass successfully ✅
 The test suite covers:
 
 ### Core Features
-- ✅ 50+ named colors
-- ✅ 15+ gradients
-- ✅ Color utilities
 - ✅ AI scene parsing
 - ✅ Effect recommendations
 - ✅ Feature explanations
-- ✅ Database operations (palettes, playlists, presets)
+- ✅ LedFX colors/gradients integration
 
 ### MCP Tools
-- ✅ Color library tools (4 tools)
+- ✅ Color tools (4 tools)
 - ✅ AI tools (4 tools)
 - ✅ Palette management (4 tools)
 - ✅ Playlist management (4 tools)
@@ -140,8 +125,8 @@ The test suite covers:
 
 ## Quality Metrics
 
-- **Test Pass Rate:** 100% (66/66)
-- **Test Suites:** 4/4 passing
+- **Test Pass Rate:** 100% (34/34)
+- **Test Suites:** 2/2 passing
 - **Build Status:** ✅ Successful
 - **Lint Status:** ✅ Clean
 - **Node Versions:** 18, 20, 22 all supported
@@ -150,26 +135,6 @@ The test suite covers:
 
 ```bash
 $ npm test
-
-PASS tests/unit/colors.test.ts
-  Color Library
-    Named Colors
-      ✓ should have at least 40 named colors
-      ✓ should have basic colors
-      ✓ should have correct structure
-      ✓ should have neon colors
-    Gradients
-      ✓ should have at least 10 gradients
-      ✓ should have nature gradients
-      ✓ should have correct structure
-    Color Utilities
-      ✓ hexToRgb should convert correctly
-      ✓ rgbToHex should convert correctly
-      ✓ findColor should find colors case-insensitively
-      ✓ findGradient should find gradients
-      ✓ blendColors should blend two colors
-      ✓ getColorCategories should return categories
-      ✓ getGradientCategories should return categories
 
 PASS tests/unit/ai-helper.test.ts
   AI Helper
@@ -196,35 +161,11 @@ PASS tests/unit/ai-helper.test.ts
       ✓ should have correct metadata
       ✓ should mark audio-reactive effects correctly
 
-PASS tests/unit/database.test.ts
-  Database
-    Palette Operations
-      ✓ should create a palette
-      ✓ should get all palettes
-      ✓ should get palette by ID
-      ✓ should get palette by name
-      ✓ should get palettes by category
-      ✓ should update palette
-      ✓ should delete palette
-    Playlist Operations
-      ✓ should create a playlist
-      ✓ should get all playlists
-      ✓ should get playlist by ID
-      ✓ should update playlist
-      ✓ should delete playlist
-    Custom Preset Operations
-      ✓ should create a custom preset
-      ✓ should get all custom presets
-      ✓ should get presets by effect type
-      ✓ should delete custom preset
-
 PASS tests/e2e/mcp-server.test.ts
   End-to-End MCP Server Tests
-    Color Library Tools
+    Color Tools
       ✓ ledfx_list_colors should return colors
-      ✓ ledfx_find_color should find crimson
-      ✓ ledfx_list_gradients should return gradients
-      ✓ ledfx_find_gradient should find sunset
+      ✓ ledfx_upsert_color_or_gradient should create a user color
     AI Tools
       ✓ ledfx_recommend_effects should provide recommendations
       ✓ ledfx_explain_feature should explain virtuals

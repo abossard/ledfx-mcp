@@ -10,14 +10,24 @@ import { handleToolCall } from '../../src/tools.js';
 import { createLedFxClient } from '../../src/ledfx-client.js';
 
 describe('End-to-End MCP Server Tests', () => {
-  beforeAll(() => {
+  let skipLedFx = false;
+
+  beforeAll(async () => {
     // Initialize the global client (mimics what index.ts does)
     const client = createLedFxClient();
     (global as any).ledfxClient = client;
+
+    await client.getInfo().catch(() => {
+      skipLedFx = true;
+    });
   });
 
-  describe('Color Library Tools', () => {
+  describe('Color Tools', () => {
     test('ledfx_list_colors should return colors', async () => {
+      if (skipLedFx) {
+        console.log('Skipped - LedFX not running');
+        return;
+      }
       const result = await handleToolCall('ledfx_list_colors', {});
       
       expect(result.content).toBeDefined();
@@ -25,36 +35,29 @@ describe('End-to-End MCP Server Tests', () => {
       
       const data = JSON.parse(result.content[0].text);
       expect(data.colors).toBeDefined();
-      expect(Array.isArray(data.colors)).toBe(true);
-      expect(data.colors.length).toBeGreaterThan(40);
-      expect(data.categories).toBeDefined();
-    });
-
-    test('ledfx_find_color should find crimson', async () => {
-      const result = await handleToolCall('ledfx_find_color', { name: 'crimson' });
-      
-      const data = JSON.parse(result.content[0].text);
-      expect(data.name).toBe('crimson');
-      expect(data.hex).toBeDefined();
-      expect(data.rgb).toBeDefined();
-    });
-
-    test('ledfx_list_gradients should return gradients', async () => {
-      const result = await handleToolCall('ledfx_list_gradients', {});
-      
-      const data = JSON.parse(result.content[0].text);
       expect(data.gradients).toBeDefined();
-      expect(Array.isArray(data.gradients)).toBe(true);
-      expect(data.gradients.length).toBeGreaterThan(10);
+      expect(data.colors.builtin).toBeDefined();
+      expect(data.colors.user).toBeDefined();
+      expect(data.gradients.builtin).toBeDefined();
+      expect(data.gradients.user).toBeDefined();
     });
 
-    test('ledfx_find_gradient should find sunset', async () => {
-      const result = await handleToolCall('ledfx_find_gradient', { name: 'sunset' });
-      
+    test('ledfx_upsert_color_or_gradient should create a user color', async () => {
+      if (skipLedFx) {
+        console.log('Skipped - LedFX not running');
+        return;
+      }
+      const colorId = `test-color-${Date.now()}`;
+      const result = await handleToolCall('ledfx_upsert_color_or_gradient', {
+        type: 'color',
+        id: colorId,
+        value: '#FF00FF',
+      });
+
       const data = JSON.parse(result.content[0].text);
-      expect(data.name).toBe('sunset');
-      expect(data.colors).toBeDefined();
-      expect(Array.isArray(data.colors)).toBe(true);
+      expect(data.success).toBe(true);
+
+      await handleToolCall('ledfx_delete_color_or_gradient', { id: colorId });
     });
   });
 
@@ -95,31 +98,39 @@ describe('End-to-End MCP Server Tests', () => {
       const result = await handleToolCall('ledfx_list_effect_types', {});
       
       const data = JSON.parse(result.content[0].text);
-      expect(data.rainbow).toBeDefined();
-      expect(data.pulse).toBeDefined();
-      expect(data.pulse.audioReactive).toBe(true);
+      expect(data.count).toBeDefined();
+      expect(Array.isArray(data.effects)).toBe(true);
     });
   });
 
   describe('Palette Management Tools', () => {
     test('ledfx_create_palette should create a palette', async () => {
+      if (skipLedFx) {
+        console.log('Skipped - LedFX not running');
+        return;
+      }
+      const paletteName = `Test Palette ${Date.now()}`;
       const result = await handleToolCall('ledfx_create_palette', {
-        name: `Test Palette ${Date.now()}`,
+        name: paletteName,
         colors: ['#FF0000', '#00FF00', '#0000FF'],
-        category: 'test',
-        description: 'E2E test palette',
       });
       
       const data = JSON.parse(result.content[0].text);
       expect(data.success).toBe(true);
-      expect(data.id).toBeDefined();
+      expect(data.id).toContain('palette:');
+
+      await handleToolCall('ledfx_delete_palette', { name: paletteName });
     });
 
     test('ledfx_list_palettes should return palettes', async () => {
+      if (skipLedFx) {
+        console.log('Skipped - LedFX not running');
+        return;
+      }
       const result = await handleToolCall('ledfx_list_palettes', {});
       
       const data = JSON.parse(result.content[0].text);
-      expect(Array.isArray(data)).toBe(true);
+      expect(Array.isArray(data.palettes)).toBe(true);
     });
   });
 
@@ -135,14 +146,15 @@ describe('End-to-End MCP Server Tests', () => {
       
       const data = JSON.parse(result.content[0].text);
       expect(data.success).toBe(true);
-      expect(data.id).toBeDefined();
+      expect(data.playlist).toBeDefined();
     });
 
     test('ledfx_list_playlists should return playlists', async () => {
       const result = await handleToolCall('ledfx_list_playlists', {});
       
       const data = JSON.parse(result.content[0].text);
-      expect(Array.isArray(data)).toBe(true);
+      expect(data).toBeDefined();
+      expect(typeof data).toBe('object');
     });
   });
 
@@ -156,8 +168,12 @@ describe('End-to-End MCP Server Tests', () => {
     });
 
     test('should handle missing palette gracefully', async () => {
+      if (skipLedFx) {
+        console.log('Skipped - LedFX not running');
+        return;
+      }
       const result = await handleToolCall('ledfx_get_palette', {
-        identifier: 'nonexistent-palette-99999',
+        name: 'nonexistent-palette-99999',
       });
       
       const data = JSON.parse(result.content[0].text);
@@ -167,6 +183,10 @@ describe('End-to-End MCP Server Tests', () => {
 
   describe('Natural Language Scene Creation', () => {
     test('should parse and create scene from description', async () => {
+      if (skipLedFx) {
+        console.log('Skipped - LedFX not running');
+        return;
+      }
       // Note: This requires active virtuals to fully test
       // For now, we just test the parsing logic
       const result = await handleToolCall('ledfx_create_scene_from_description', {

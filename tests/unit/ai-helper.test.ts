@@ -12,9 +12,25 @@ import {
 } from '../../src/ai-helper.js';
 
 describe('AI Helper', () => {
+  const catalog = {
+    colors: {
+      blue: '#0000FF',
+      purple: '#800080',
+      red: '#FF0000',
+      green: '#00FF00',
+    },
+    gradients: {
+      sunset: 'linear-gradient(90deg, #ff0000, #0000ff)',
+      ocean: 'linear-gradient(90deg, #003973, #0066CC)',
+    },
+  };
+
   describe('parseSceneDescription', () => {
     test('should parse calm ocean scene', () => {
-      const result = parseSceneDescription('Create a calm ocean scene with slow blue waves');
+      const result = parseSceneDescription(
+        'Create a calm ocean scene with slow blue waves',
+        catalog
+      );
       
       expect(result.sceneName).toBeDefined();
       expect(result.speed).toBe(20); // slow
@@ -24,37 +40,43 @@ describe('AI Helper', () => {
     });
 
     test('should parse energetic party scene', () => {
-      const result = parseSceneDescription('Make an energetic party scene with fast rainbow');
+      const result = parseSceneDescription(
+        'Make an energetic party scene with fast rainbow',
+        catalog
+      );
       
       expect(result.speed).toBe(80); // fast
       expect(result.tags).toContain('party');
     });
 
     test('should extract colors', () => {
-      const result = parseSceneDescription('Create scene with blue and purple colors');
+      const result = parseSceneDescription(
+        'Create scene with blue and purple colors',
+        catalog
+      );
       
       expect(result.colors).toBeDefined();
       expect(result.colors!.length).toBeGreaterThan(0);
     });
 
     test('should recognize gradients', () => {
-      const result = parseSceneDescription('Apply sunset gradient');
+      const result = parseSceneDescription('Apply sunset gradient', catalog);
       
       expect(result.gradient).toBe('sunset');
     });
 
     test('should detect brightness keywords', () => {
-      const dimResult = parseSceneDescription('Create dim lighting');
+      const dimResult = parseSceneDescription('Create dim lighting', catalog);
       expect(dimResult.brightness).toBe(0.5);
 
-      const brightResult = parseSceneDescription('Create bright lighting');
+      const brightResult = parseSceneDescription('Create bright lighting', catalog);
       expect(brightResult.brightness).toBe(1.0);
     });
   });
 
   describe('recommendEffects', () => {
     test('should recommend effects for party mood', () => {
-      const recommendations = recommendEffects('party music', 'party');
+      const recommendations = recommendEffects('party music', 'party', catalog);
       
       expect(Array.isArray(recommendations)).toBe(true);
       expect(recommendations.length).toBeGreaterThan(0);
@@ -65,7 +87,7 @@ describe('AI Helper', () => {
     });
 
     test('should recommend audio-reactive effects for music', () => {
-      const recommendations = recommendEffects('music visualization');
+      const recommendations = recommendEffects('music visualization', undefined, catalog);
       
       const audioEffects = recommendations.filter(r => 
         r.effectType === 'pulse' || r.effectType === 'wavelength'
@@ -74,7 +96,7 @@ describe('AI Helper', () => {
     });
 
     test('should recommend calm effects for relaxation', () => {
-      const recommendations = recommendEffects('relaxing evening', 'chill');
+      const recommendations = recommendEffects('relaxing evening', 'chill', catalog);
       
       expect(recommendations.length).toBeGreaterThan(0);
       expect(recommendations[0].confidence).toBeGreaterThan(0);
@@ -82,7 +104,7 @@ describe('AI Helper', () => {
     });
 
     test('should sort by confidence', () => {
-      const recommendations = recommendEffects('party');
+      const recommendations = recommendEffects('party', undefined, catalog);
       
       for (let i = 1; i < recommendations.length; i++) {
         expect(recommendations[i-1].confidence).toBeGreaterThanOrEqual(
