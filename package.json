@@ -3,9 +3,7 @@
   "version": "0.1.0",
   "description": "MCP server for managing a local LedFX instance",
   "main": "dist/index.js",
-  "bin": {
-    "ledfx-mcp": "dist/index.js"
-  },
+  "bin": "dist/index.js",
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -14,6 +12,7 @@
     "dev": "npm run build && node dist/index.js",
     "watch": "tsc --watch",
     "prepare": "npm run build",
+    "postinstall": "npm run build",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "test": "jest",
