@@ -11,7 +11,7 @@
  */
 
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { LedFxClient, LedFxBackup, RestoreOptions, LedFxColorsResponse } from "./ledfx-client.js";
+import { LedFxClient, LedFxBackup, RestoreOptions, LedFxColorsResponse, LedFxVirtual, LedFxSceneVirtual } from "./ledfx-client.js";
 import { parseSceneDescription, recommendEffects, explainFeature, getFeatureCategories, LedFxColorCatalog } from "./ai-helper.js";
 import logger from "./logger.js";
 import * as fs from "fs";
@@ -66,6 +66,79 @@ interface PaletteResolutionResult {
   errors: string[];
 }
 
+interface SceneVirtualSnapshot {
+  type?: string;
+  config?: Record<string, any>;
+  action?: "activate" | "ignore" | "stop" | "forceblack";
+}
+
+// calculation: determine blender-related virtual IDs that must be active
+function getBlenderActivationIds(virtuals: LedFxVirtual[]): string[] {
+  const blenderVirtual = virtuals.find(
+    virtual => virtual.effect?.type?.toLowerCase() === "blender"
+  );
+  if (!blenderVirtual || !blenderVirtual.effect?.config) {
+    return [];
+  }
+
+  const config = blenderVirtual.effect.config as Record<string, unknown>;
+  const ids = [
+    blenderVirtual.id,
+    config.background,
+    config.foreground,
+    config.mask,
+  ].filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  return Array.from(new Set(ids));
+}
+
+// calculation: build explicit per-virtual scene payload with activate actions for active virtuals
+function buildSceneVirtualsPayload(virtuals: LedFxVirtual[]): Record<string, LedFxSceneVirtual> {
+  const payload: Record<string, LedFxSceneVirtual> = {};
+  for (const virtual of virtuals) {
+    if (!virtual.effect || !virtual.effect.type) continue;
+    payload[virtual.id] = {
+      type: virtual.effect.type,
+      config: virtual.effect.config || {},
+      ...(virtual.active ? { action: "activate" } : {}),
+    };
+  }
+  return payload;
+}
+
+// calculation: determine whether a scene uses a blender virtual
+function isBlenderScene(virtuals: Record<string, SceneVirtualSnapshot> | undefined): boolean {
+  if (!virtuals) return false;
+  return Object.values(virtuals).some(virtual =>
+    (virtual.type || "").toLowerCase() === "blender"
+  );
+}
+
+// calculation: build per-virtual scene payload from an existing scene snapshot
+function buildSceneVirtualsFromSnapshot(
+  virtuals: Record<string, SceneVirtualSnapshot>
+): Record<string, LedFxSceneVirtual> {
+  const payload: Record<string, LedFxSceneVirtual> = {};
+  for (const [virtualId, snapshot] of Object.entries(virtuals)) {
+    const type = snapshot.type || "";
+    const config = snapshot.config || {};
+    if (!type) {
+      payload[virtualId] = {
+        type: "",
+        config: {},
+        action: snapshot.action || "ignore",
+      };
+      continue;
+    }
+    payload[virtualId] = {
+      type,
+      config,
+      ...(snapshot.action ? { action: snapshot.action } : {}),
+    };
+  }
+  return payload;
+}
+
 function resolvePaletteGradient(
   paletteId: string,
   colorsResponse: LedFxColorsResponse
@@ -103,6 +176,7 @@ function ensureEffectConfig(value: unknown): Record<string, any> | null {
   }
   return value as Record<string, any>;
 }
+
 
 // action: verifies LedFX applied the expected effect type to a virtual
 async function waitForEffectApplied(
@@ -440,6 +514,15 @@ export const tools: Tool[] = [
         },
       },
       required: ["name"],
+    },
+  },
+  {
+    name: "ledfx_refresh_blender_scenes",
+    description: "Recreate all blender scenes using their stored virtual configurations (no scene activation)",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
     },
   },
   {
@@ -1209,7 +1292,15 @@ export async function handleToolCall(
       }
 
       case "ledfx_create_scene": {
-        await client.createScene(args.name, args.tags);
+        const virtuals = await client.getVirtuals();
+        const blenderActivationIds = getBlenderActivationIds(virtuals);
+        if (blenderActivationIds.length > 0) {
+          for (const virtualId of blenderActivationIds) {
+            await client.setVirtualActive(virtualId, true);
+          }
+        }
+        const sceneVirtuals = buildSceneVirtualsPayload(virtuals);
+        await client.createScene(args.name, args.tags, sceneVirtuals);
         return formatResponse({
           success: true,
           message: `Scene '${args.name}' created`,
@@ -1221,6 +1312,31 @@ export async function handleToolCall(
         return formatResponse({
           success: true,
           message: `Scene '${args.scene_id}' deleted`,
+        });
+      }
+
+      case "ledfx_refresh_blender_scenes": {
+        const scenes = await client.getScenes();
+        const blenderScenes = scenes.filter(scene => isBlenderScene(scene.virtuals as Record<string, SceneVirtualSnapshot> | undefined));
+        const results: Array<{ name: string; status: string; error?: string }> = [];
+
+        for (const scene of blenderScenes) {
+          try {
+            const virtuals = buildSceneVirtualsFromSnapshot(scene.virtuals as Record<string, SceneVirtualSnapshot>);
+            await client.deleteScene(scene.id);
+            await client.createScene(scene.name, scene.scene_tags, virtuals);
+            results.push({ name: scene.name, status: "updated" });
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            results.push({ name: scene.name, status: "failed", error: errorMessage });
+          }
+        }
+
+        return formatResponse({
+          success: true,
+          updated: results.filter(r => r.status === "updated").length,
+          failed: results.filter(r => r.status === "failed").length,
+          results,
         });
       }
 

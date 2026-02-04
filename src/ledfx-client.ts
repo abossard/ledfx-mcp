@@ -43,12 +43,13 @@ export interface LedFxScene {
   id: string;
   name: string;
   scene_tags?: string;
-  virtuals?: Record<string, {
-    effect: {
-      type: string;
-      config: Record<string, any>;
-    };
-  }>;
+  virtuals?: Record<string, LedFxSceneVirtual>;
+}
+
+export interface LedFxSceneVirtual {
+  type: string;
+  config: Record<string, any>;
+  action?: "activate" | "ignore" | "stop" | "forceblack";
 }
 
 export interface LedFxPreset {
@@ -468,12 +469,17 @@ export class LedFxClient {
   /**
    * Create a new scene (action)
    */
-  async createScene(name: string, sceneTags?: string): Promise<void> {
+  async createScene(
+    name: string,
+    sceneTags?: string,
+    virtuals?: Record<string, LedFxSceneVirtual>
+  ): Promise<void> {
     await this.request(`/scenes`, {
       method: "POST",
       body: JSON.stringify({
         name,
         scene_tags: sceneTags,
+        ...(virtuals ? { virtuals } : {}),
       }),
     });
   }
