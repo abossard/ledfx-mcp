@@ -251,6 +251,7 @@ The server exposes 40+ MCP tools organized into categories:
 | `ledfx_get_color_or_gradient` | Get a specific color or gradient by ID |
 | `ledfx_upsert_color_or_gradient` | Create/update a user color or gradient |
 | `ledfx_delete_color_or_gradient` | Delete a user color or gradient |
+| `ledfx_delete_user_gradients` | Delete all user-defined gradients (includes palettes) |
 
 ### AI Features
 | Tool | Description |
@@ -265,6 +266,8 @@ The server exposes 40+ MCP tools organized into categories:
 |------|-------------|
 | `ledfx_get_presets` | Get presets for a virtual's effect |
 | `ledfx_apply_preset` | Apply a preset to a virtual |
+| `ledfx_save_preset` | Save current effect as a user preset |
+| `ledfx_delete_preset` | Delete a preset for a virtual |
 
 ### Audio Management
 | Tool | Description |

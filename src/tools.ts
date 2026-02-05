@@ -55,6 +55,11 @@ function listPalettes(colorsResponse: LedFxColorsResponse): Array<{ id: string; 
   return palettes.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// calculation: collect user gradient IDs for bulk deletion
+function listUserGradientIds(colorsResponse: LedFxColorsResponse): string[] {
+  return Object.keys(colorsResponse.gradients.user || {}).sort();
+}
+
 interface BlenderSourceInput {
   virtual_id: string;
   effect_type: string;
@@ -473,6 +478,33 @@ export const tools: Tool[] = [
       required: ["virtual_id", "preset_name"],
     },
   },
+  {
+    name: "ledfx_delete_preset",
+    description: "Delete a preset for a virtual's effect",
+    inputSchema: {
+      type: "object",
+      properties: {
+        virtual_id: {
+          type: "string",
+          description: "The unique identifier of the virtual",
+        },
+        category: {
+          type: "string",
+          description: "Preset category: 'ledfx_presets' or 'user_presets'",
+          enum: ["ledfx_presets", "user_presets"],
+        },
+        effect_id: {
+          type: "string",
+          description: "The effect type",
+        },
+        preset_id: {
+          type: "string",
+          description: "The preset identifier",
+        },
+      },
+      required: ["virtual_id", "category", "effect_id", "preset_id"],
+    },
+  },
 
   // ========== Scene Management (CORRECTED) ==========
   {
@@ -620,6 +652,15 @@ export const tools: Tool[] = [
         },
       },
       required: ["id"],
+    },
+  },
+  {
+    name: "ledfx_delete_user_gradients",
+    description: "Delete all user-defined gradients in LedFX /api/colors (includes palettes).",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
     },
   },
 
@@ -1277,6 +1318,24 @@ export async function handleToolCall(
         });
       }
 
+      case "ledfx_delete_preset": {
+        const presets = await client.getVirtualPresets(args.virtual_id);
+        const category = args.category as "ledfx_presets" | "user_presets";
+        const effectId = String(args.effect_id);
+        const presetId = String(args.preset_id);
+        const effectPresets = presets[category]?.[effectId];
+        if (!effectPresets || !(presetId in effectPresets)) {
+          return formatResponse({
+            error: `Preset '${presetId}' not found for effect '${effectId}' in ${category}.`,
+          });
+        }
+        await client.deletePreset(args.virtual_id, category, effectId, presetId);
+        return formatResponse({
+          success: true,
+          message: `Preset '${presetId}' deleted for virtual '${args.virtual_id}'`,
+        });
+      }
+
       // ========== Scenes ==========
       case "ledfx_list_scenes": {
         const scenes = await client.getScenes();
@@ -1523,6 +1582,18 @@ export async function handleToolCall(
         return formatResponse({
           success: true,
           message: `Color or gradient '${args.id}' deleted`,
+        });
+      }
+
+      case "ledfx_delete_user_gradients": {
+        const colors = await client.getColors();
+        const gradientIds = listUserGradientIds(colors);
+        for (const gradientId of gradientIds) {
+          await client.deleteColor(gradientId);
+        }
+        return formatResponse({
+          success: true,
+          deleted: gradientIds.length,
         });
       }
 

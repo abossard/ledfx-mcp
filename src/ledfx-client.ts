@@ -413,6 +413,25 @@ export class LedFxClient {
   }
 
   /**
+   * Delete a preset on a virtual (action)
+   */
+  async deletePreset(
+    virtualId: string,
+    category: "ledfx_presets" | "user_presets",
+    effectId: string,
+    presetId: string
+  ): Promise<void> {
+    await this.request(`/virtuals/${virtualId}/presets`, {
+      method: "DELETE",
+      body: JSON.stringify({
+        category,
+        effect_id: effectId,
+        preset_id: presetId,
+      }),
+    });
+  }
+
+  /**
    * DEPRECATED: Use setVirtualEffect instead
    * @deprecated This method uses the wrong endpoint. Use setVirtualEffect.
    */
