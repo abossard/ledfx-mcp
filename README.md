@@ -48,11 +48,11 @@ This project follows principles from:
 
 **Current Status:** Implemented with Comprehensive Test Suite
 
-This MCP server is fully implemented against the official LedFX 2.1.2 API and validated with 34 automated tests plus continuous integration checks. The implementation fixes critical API issues (virtuals vs devices) and adds advanced features like palette management, natural language scene creation, and AI-powered recommendations.
+This MCP server is implemented against current LedFX APIs and validated with automated tests plus continuous integration checks. The implementation fixes critical API issues (virtuals vs devices) and adds advanced features like palette management, natural language scene creation, and AI-powered recommendations.
 
 ### Important Notes
 
-1. **API Corrections Applied:** Effects are now correctly applied to virtuals (not devices), matching LedFX 2.1.2 API
+1. **API Corrections Applied:** Effects are correctly applied to virtuals (not devices), matching current LedFX API behavior
 2. **Comprehensive Testing:** 34 tests covering unit and E2E scenarios - all passing
 3. **CI/CD Pipeline:** GitHub Actions workflow with lint, build, test, and coverage jobs
 4. **Production Ready:** Fully documented with installation guide, usage examples, and architecture docs
@@ -66,7 +66,7 @@ This MCP server is fully implemented against the official LedFX 2.1.2 API and va
 - **[Installation Guide](INSTALL.md)** - Step-by-step setup instructions
 - **[Usage Guide](docs/USAGE_GUIDE.md)** - How to use all features
 
-**Status:** Ready for production use with LedFX 2.1.2+
+**Status:** Ready for production use with LedFX 2.1.4+
 
 ## Prerequisites
 
@@ -91,7 +91,7 @@ pip install ledfx
 ledfx --host 0.0.0.0 --port 8888
 ```
 
-See [REFERENCES.md](docs/REFERENCES.md) for detailed installation instructions.
+See the official LedFX links in [REFERENCES.md](docs/REFERENCES.md) for current installation docs.
 
 ## Installation
 
@@ -327,13 +327,10 @@ Comprehensive documentation is available in the `docs/` directory:
 ### API Specification
 **[docs/API_SPECIFICATION.md](docs/API_SPECIFICATION.md)**
 
-Complete reference for LedFX REST API endpoints based on version 2.1.2:
+Complete reference for LedFX REST API endpoints (verified against LedFX 2.1.4 and upstream source):
 - All endpoint paths, methods, and parameters
-- Request/response examples
-- Error handling patterns
-- Effect types and configuration options
-- WebSocket endpoints
-- Version compatibility notes
+- Data model and orchestration caveats (virtuals, presets, scenes, playlists, blender)
+- API behavior quirks and compatibility notes
 
 ### Test Specification
 **[docs/TEST_SPECIFICATION.md](docs/TEST_SPECIFICATION.md)**
@@ -360,13 +357,10 @@ Critical analysis of current implementation vs actual API:
 ### References
 **[docs/REFERENCES.md](docs/REFERENCES.md)**
 
-Complete resource guide:
+Concise source index for API verification:
 - Official LedFX documentation links
-- Installation methods (Docker, pip, source)
-- API testing examples (curl, Python, JavaScript)
-- Community resources and support channels
-- Hardware recommendations
-- Security best practices
+- Release/version links
+- Upstream source files used to validate API behavior
 
 ## Architecture
 

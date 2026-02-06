@@ -11,13 +11,36 @@
  */
 
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { LedFxClient, LedFxBackup, RestoreOptions, LedFxColorsResponse, LedFxVirtual, LedFxSceneVirtual } from "./ledfx-client.js";
+import {
+  LedFxApiError,
+  LedFxBackup,
+  LedFxClient,
+  LedFxColorsResponse,
+  LedFxConnectionError,
+  LedFxPlaylistItem,
+  LedFxPreset,
+  LedFxRequestError,
+  LedFxSceneVirtual,
+  LedFxTransitionMode,
+  LedFxVirtual,
+  RestoreOptions,
+} from "./ledfx-client.js";
 import { parseSceneDescription, recommendEffects, explainFeature, getFeatureCategories, LedFxColorCatalog } from "./ai-helper.js";
 import logger from "./logger.js";
 import * as fs from "fs";
 import * as path from "path";
 
 const PALETTE_PREFIX = "palette:";
+const LEDFX_TRANSITION_MODES: ReadonlyArray<LedFxTransitionMode> = [
+  "Add",
+  "Dissolve",
+  "Push",
+  "Slide",
+  "Iris",
+  "Through White",
+  "Through Black",
+  "None",
+];
 
 function buildPaletteGradient(colors: string[]): string {
   const stops = colors.join(", ");
@@ -63,18 +86,20 @@ function listUserGradientIds(colorsResponse: LedFxColorsResponse): string[] {
 interface BlenderSourceInput {
   virtual_id: string;
   effect_type: string;
-  effect_config?: Record<string, any>;
+  effect_config?: Record<string, unknown>;
 }
 
 interface PaletteResolutionResult {
-  config: Record<string, any>;
+  config: Record<string, unknown>;
   errors: string[];
 }
 
 interface SceneVirtualSnapshot {
   type?: string;
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
   action?: "activate" | "ignore" | "stop" | "forceblack";
+  preset?: string;
+  preset_category?: "ledfx_presets" | "user_presets";
 }
 
 // calculation: determine blender-related virtual IDs that must be active
@@ -139,6 +164,8 @@ function buildSceneVirtualsFromSnapshot(
       type,
       config,
       ...(snapshot.action ? { action: snapshot.action } : {}),
+      ...(snapshot.preset ? { preset: snapshot.preset } : {}),
+      ...(snapshot.preset_category ? { preset_category: snapshot.preset_category } : {}),
     };
   }
   return payload;
@@ -156,7 +183,7 @@ function resolvePaletteGradient(
 }
 
 function resolvePalettesInConfig(
-  config: Record<string, any>,
+  config: Record<string, unknown>,
   colorsResponse: LedFxColorsResponse
 ): PaletteResolutionResult {
   const errors: string[] = [];
@@ -174,12 +201,92 @@ function resolvePalettesInConfig(
   return { config: nextConfig, errors };
 }
 
-function ensureEffectConfig(value: unknown): Record<string, any> | null {
+function ensureEffectConfig(value: unknown): Record<string, unknown> | null {
   if (value === undefined) return {};
   if (!value || typeof value !== "object") {
     return null;
   }
-  return value as Record<string, any>;
+  return value as Record<string, unknown>;
+}
+
+// action: fetch available scene IDs from LedFX
+async function getAvailableSceneIds(client: LedFxClient): Promise<Set<string>> {
+  const scenes = await client.getScenes();
+  return new Set(scenes.map(scene => scene.id));
+}
+
+// calculation: find missing scene IDs in a requested list
+function findMissingSceneIds(sceneIds: string[], availableSceneIds: Set<string>): string[] {
+  return sceneIds.filter(sceneId => !availableSceneIds.has(sceneId));
+}
+
+// action: validate scene virtual references before scene write operations
+async function validateSceneVirtualReferences(
+  client: LedFxClient,
+  virtuals: Record<string, LedFxSceneVirtual>
+): Promise<string[]> {
+  const errors: string[] = [];
+
+  const [allVirtuals, effectSchemas] = await Promise.all([
+    client.getVirtuals(),
+    client.getEffectSchemas(),
+  ]);
+
+  const validVirtualIds = new Set(allVirtuals.map(virtual => virtual.id));
+  const effectPresetCache = new Map<
+    string,
+    {
+      ledfx_presets: Record<string, LedFxPreset>;
+      user_presets: Record<string, LedFxPreset>;
+    }
+  >();
+
+  for (const [virtualId, virtualConfig] of Object.entries(virtuals)) {
+    if (!validVirtualIds.has(virtualId)) {
+      errors.push(`Unknown virtual '${virtualId}' in scene payload.`);
+      continue;
+    }
+
+    if (!virtualConfig.type) {
+      continue;
+    }
+
+    const effectType = virtualConfig.type;
+    if (!(effectType in effectSchemas)) {
+      errors.push(`Unknown effect type '${effectType}' for virtual '${virtualId}'.`);
+      continue;
+    }
+
+    const presetId = virtualConfig.preset;
+    if (!presetId || presetId === "reset") {
+      continue;
+    }
+
+    if (!effectPresetCache.has(effectType)) {
+      effectPresetCache.set(effectType, await client.getEffectPresets(effectType));
+    }
+    const presets = effectPresetCache.get(effectType)!;
+
+    const category = virtualConfig.preset_category;
+    if (category) {
+      if (!(presetId in (presets[category] || {}))) {
+        errors.push(
+          `Preset '${presetId}' not found in ${category} for effect '${effectType}' (virtual '${virtualId}').`
+        );
+      }
+      continue;
+    }
+
+    const inLedfx = presetId in (presets.ledfx_presets || {});
+    const inUser = presetId in (presets.user_presets || {});
+    if (!inLedfx && !inUser) {
+      errors.push(
+        `Preset '${presetId}' not found for effect '${effectType}' (virtual '${virtualId}').`
+      );
+    }
+  }
+
+  return errors;
 }
 
 
@@ -285,6 +392,31 @@ export const tools: Tool[] = [
         },
       },
       required: ["virtual_id", "active"],
+    },
+  },
+  {
+    name: "ledfx_update_virtual_config",
+    description: "Safely update virtual transition settings. Use this to configure hard cuts vs soft transitions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        virtual_id: {
+          type: "string",
+          description: "The unique identifier of the virtual",
+        },
+        transition_mode: {
+          type: "string",
+          enum: [...LEDFX_TRANSITION_MODES],
+          description: "Transition mode between effects/scenes",
+        },
+        transition_time: {
+          type: "number",
+          minimum: 0,
+          maximum: 5,
+          description: "Transition time in seconds (0-5)",
+        },
+      },
+      required: ["virtual_id"],
     },
   },
 
@@ -517,6 +649,20 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: "ledfx_get_scene",
+    description: "Get a single scene by ID with full scene config payload",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scene_id: {
+          type: "string",
+          description: "The unique identifier of the scene",
+        },
+      },
+      required: ["scene_id"],
+    },
+  },
+  {
     name: "ledfx_activate_scene",
     description: "Activate a saved scene by ID",
     inputSchema: {
@@ -546,6 +692,37 @@ export const tools: Tool[] = [
         },
       },
       required: ["name"],
+    },
+  },
+  {
+    name: "ledfx_update_scene",
+    description: "Update an existing scene in place by ID",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scene_id: {
+          type: "string",
+          description: "The unique identifier of the scene to update",
+        },
+        name: {
+          type: "string",
+          description: "Optional new scene name",
+        },
+        tags: {
+          type: "string",
+          description: "Optional comma-separated tags",
+        },
+        virtuals: {
+          type: "object",
+          description: "Optional virtual payload to replace scene virtual config",
+          additionalProperties: true,
+        },
+        snapshot: {
+          type: "boolean",
+          description: "If true, snapshot current virtual state when updating",
+        },
+      },
+      required: ["scene_id"],
     },
   },
   {
@@ -843,6 +1020,87 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: "ledfx_upsert_playlist",
+    description: "Create or replace a playlist safely. If it exists, updates in place.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        playlist_id: {
+          type: "string",
+          description: "Playlist ID",
+        },
+        name: {
+          type: "string",
+          description: "Display name (required when creating a new playlist)",
+        },
+        scene_ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "Scene IDs for playlist items",
+        },
+        mode: {
+          type: "string",
+          enum: ["sequence", "shuffle"],
+          description: "Playback mode",
+        },
+        default_duration_ms: {
+          type: "number",
+          description: "Default item duration in milliseconds",
+        },
+        timing: {
+          type: "object",
+          description: "Optional timing object",
+          additionalProperties: true,
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional playlist tags",
+        },
+        image: {
+          type: "string",
+          description: "Optional playlist image/icon",
+        },
+      },
+      required: ["playlist_id"],
+    },
+  },
+  {
+    name: "ledfx_patch_playlist_items",
+    description: "Patch playlist items with add/remove/move/replace_duration operations",
+    inputSchema: {
+      type: "object",
+      properties: {
+        playlist_id: {
+          type: "string",
+          description: "Playlist ID to patch",
+        },
+        operation: {
+          type: "string",
+          enum: ["add", "remove", "move", "replace_duration"],
+          description: "Patch operation",
+        },
+        scene_id: {
+          type: "string",
+          description: "Scene ID (required for add, optional for remove)",
+        },
+        index: {
+          type: "number",
+          description: "Item index (required for move/replace_duration, optional for remove)",
+        },
+        to_index: {
+          type: "number",
+          description: "Destination index for move",
+        },
+        duration_ms: {
+          type: "number",
+          description: "Duration for add/replace_duration",
+        },
+      },
+      required: ["playlist_id", "operation"],
+    },
+  },
+  {
     name: "ledfx_delete_playlist",
     description: "Delete a LedFX playlist",
     inputSchema: {
@@ -1057,6 +1315,21 @@ function formatResponse(data: any): { content: Array<{ type: string; text: strin
   };
 }
 
+function formatToolError(
+  code: string,
+  message: string,
+  details?: Record<string, unknown>
+): { content: Array<{ type: string; text: string }> } {
+  return formatResponse({
+    ok: false,
+    error: {
+      code,
+      message,
+      ...(details || {}),
+    },
+  });
+}
+
 /**
  * Handle tool execution
  */
@@ -1113,6 +1386,64 @@ export async function handleToolCall(
         return formatResponse({
           success: true,
           message: `Virtual '${args.virtual_id}' ${args.active ? "activated" : "deactivated"}`,
+        });
+      }
+
+      case "ledfx_update_virtual_config": {
+        const transitionModeRaw = args.transition_mode;
+        const transitionTimeRaw = args.transition_time;
+
+        if (transitionModeRaw === undefined && transitionTimeRaw === undefined) {
+          return formatResponse({
+            error: "Provide at least one of transition_mode or transition_time.",
+          });
+        }
+
+        if (
+          transitionModeRaw !== undefined &&
+          (typeof transitionModeRaw !== "string" ||
+            !LEDFX_TRANSITION_MODES.includes(transitionModeRaw as LedFxTransitionMode))
+        ) {
+          return formatResponse({
+            error: `Invalid transition_mode. Allowed values: ${LEDFX_TRANSITION_MODES.join(", ")}`,
+          });
+        }
+
+        if (transitionTimeRaw !== undefined) {
+          if (
+            typeof transitionTimeRaw !== "number" ||
+            !Number.isFinite(transitionTimeRaw) ||
+            transitionTimeRaw < 0 ||
+            transitionTimeRaw > 5
+          ) {
+            return formatResponse({
+              error: "transition_time must be a finite number between 0 and 5.",
+            });
+          }
+        }
+
+        // Ensure virtual exists before applying config updates, and preserve active state.
+        const currentVirtual = await client.getVirtual(args.virtual_id);
+
+        const updates: Record<string, unknown> = {};
+        if (transitionModeRaw !== undefined) {
+          updates.transition_mode = transitionModeRaw as LedFxTransitionMode;
+        }
+        if (transitionTimeRaw !== undefined) {
+          updates.transition_time = transitionTimeRaw as number;
+        }
+
+        const updatedVirtual = await client.updateVirtualConfig(args.virtual_id, updates, {
+          active: currentVirtual.active,
+        });
+        const transitionConfig = updatedVirtual?.config || {};
+
+        return formatResponse({
+          success: true,
+          message: `Virtual '${args.virtual_id}' transition config updated`,
+          virtual_id: args.virtual_id,
+          transition_mode: transitionConfig.transition_mode ?? null,
+          transition_time: transitionConfig.transition_time ?? null,
         });
       }
 
@@ -1211,7 +1542,7 @@ export async function handleToolCall(
           foreground: foreground.virtual_id,
           mask: mask.virtual_id,
           ...(args.blender_config || {}),
-        } as Record<string, any>;
+        } as Record<string, unknown>;
 
         await client.setVirtualEffect(args.blender_virtual_id, "blender", blenderConfig);
         const blenderApplied = await waitForEffectApplied(
@@ -1342,6 +1673,11 @@ export async function handleToolCall(
         return formatResponse(scenes);
       }
 
+      case "ledfx_get_scene": {
+        const scene = await client.getScene(args.scene_id);
+        return formatResponse(scene);
+      }
+
       case "ledfx_activate_scene": {
         await client.activateScene(args.scene_id);
         return formatResponse({
@@ -1366,6 +1702,33 @@ export async function handleToolCall(
         });
       }
 
+      case "ledfx_update_scene": {
+        const updates: {
+          name?: string;
+          sceneTags?: string | null;
+          virtuals?: Record<string, LedFxSceneVirtual>;
+          snapshot?: boolean;
+        } = {};
+
+        if (args.name) updates.name = String(args.name);
+        if (args.tags !== undefined) updates.sceneTags = String(args.tags);
+        if (args.snapshot !== undefined) updates.snapshot = Boolean(args.snapshot);
+        if (args.virtuals) {
+          updates.virtuals = args.virtuals as Record<string, LedFxSceneVirtual>;
+          const validationErrors = await validateSceneVirtualReferences(client, updates.virtuals);
+          if (validationErrors.length > 0) {
+            return formatResponse({ error: validationErrors.join(" ") });
+          }
+        }
+
+        const updated = await client.updateScene(args.scene_id, updates);
+        return formatResponse({
+          success: true,
+          message: `Scene '${args.scene_id}' updated`,
+          scene: updated,
+        });
+      }
+
       case "ledfx_delete_scene": {
         await client.deleteScene(args.scene_id);
         return formatResponse({
@@ -1382,8 +1745,15 @@ export async function handleToolCall(
         for (const scene of blenderScenes) {
           try {
             const virtuals = buildSceneVirtualsFromSnapshot(scene.virtuals as Record<string, SceneVirtualSnapshot>);
-            await client.deleteScene(scene.id);
-            await client.createScene(scene.name, scene.scene_tags, virtuals);
+            const validationErrors = await validateSceneVirtualReferences(client, virtuals);
+            if (validationErrors.length > 0) {
+              throw new Error(validationErrors.join(" "));
+            }
+            await client.updateScene(scene.id, {
+              name: scene.name,
+              sceneTags: scene.scene_tags || null,
+              virtuals,
+            });
             results.push({ name: scene.name, status: "updated" });
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1475,6 +1845,15 @@ export async function handleToolCall(
       }
 
       case "ledfx_create_playlist": {
+        const sceneIds = args.scene_ids as string[];
+        const availableSceneIds = await getAvailableSceneIds(client);
+        const missingSceneIds = findMissingSceneIds(sceneIds, availableSceneIds);
+        if (missingSceneIds.length > 0) {
+          return formatResponse({
+            error: `Missing scene IDs: ${missingSceneIds.join(", ")}`,
+          });
+        }
+
         const items = (args.scene_ids as string[]).map((sceneId: string) => ({
           scene_id: sceneId,
           duration_ms: args.duration_ms || 15000,
@@ -1496,11 +1875,24 @@ export async function handleToolCall(
       }
 
       case "ledfx_update_playlist": {
-        const updates: Record<string, any> = {};
+        const updates: {
+          name?: string;
+          mode?: "sequence" | "shuffle";
+          default_duration_ms?: number;
+          items?: LedFxPlaylistItem[];
+        } = {};
         if (args.name) updates.name = args.name;
         if (args.mode) updates.mode = args.mode;
         if (args.duration_ms) updates.default_duration_ms = args.duration_ms;
         if (args.scene_ids) {
+          const sceneIds = args.scene_ids as string[];
+          const availableSceneIds = await getAvailableSceneIds(client);
+          const missingSceneIds = findMissingSceneIds(sceneIds, availableSceneIds);
+          if (missingSceneIds.length > 0) {
+            return formatResponse({
+              error: `Missing scene IDs: ${missingSceneIds.join(", ")}`,
+            });
+          }
           updates.items = (args.scene_ids as string[]).map((sceneId: string) => ({
             scene_id: sceneId,
             duration_ms: args.duration_ms || 15000,
@@ -1513,6 +1905,173 @@ export async function handleToolCall(
         });
       }
 
+      case "ledfx_upsert_playlist": {
+        const playlistId = String(args.playlist_id);
+        const existing = await client.getPlaylist(playlistId);
+        const sceneIds = (args.scene_ids || []) as string[];
+
+        if (!existing) {
+          if (!args.name) {
+            return formatResponse({
+              error: `Playlist '${playlistId}' does not exist. 'name' is required to create it.`,
+            });
+          }
+          if (!args.scene_ids || sceneIds.length === 0) {
+            return formatResponse({
+              error: `Playlist '${playlistId}' does not exist. 'scene_ids' is required to create it.`,
+            });
+          }
+
+          const availableSceneIds = await getAvailableSceneIds(client);
+          const missingSceneIds = findMissingSceneIds(sceneIds, availableSceneIds);
+          if (missingSceneIds.length > 0) {
+            return formatResponse({
+              error: `Missing scene IDs: ${missingSceneIds.join(", ")}`,
+            });
+          }
+
+          const defaultDurationMs = Number(args.default_duration_ms || 15000);
+          const items: LedFxPlaylistItem[] = sceneIds.map(sceneId => ({
+            scene_id: sceneId,
+            duration_ms: defaultDurationMs,
+          }));
+
+          const created = await client.createPlaylist(
+            playlistId,
+            String(args.name),
+            items,
+            {
+              mode: (args.mode as "sequence" | "shuffle") || "sequence",
+              default_duration_ms: defaultDurationMs,
+              timing: args.timing as Record<string, unknown> | undefined,
+              tags: args.tags as string[] | undefined,
+              image: (args.image ?? undefined) as string | null | undefined,
+            }
+          );
+
+          return formatResponse({
+            success: true,
+            message: `Playlist '${playlistId}' created`,
+            playlist: created,
+          });
+        }
+
+        const updates: {
+          name?: string;
+          mode?: "sequence" | "shuffle";
+          default_duration_ms?: number;
+          items?: LedFxPlaylistItem[];
+          timing?: Record<string, unknown>;
+          tags?: string[];
+          image?: string | null;
+        } = {};
+
+        if (args.name) updates.name = String(args.name);
+        if (args.mode) updates.mode = args.mode as "sequence" | "shuffle";
+        if (args.default_duration_ms) updates.default_duration_ms = Number(args.default_duration_ms);
+        if (args.timing) updates.timing = args.timing as Record<string, unknown>;
+        if (args.tags) updates.tags = args.tags as string[];
+        if (args.image !== undefined) {
+          updates.image = args.image === null ? null : String(args.image);
+        }
+
+        if (args.scene_ids) {
+          const availableSceneIds = await getAvailableSceneIds(client);
+          const missingSceneIds = findMissingSceneIds(sceneIds, availableSceneIds);
+          if (missingSceneIds.length > 0) {
+            return formatResponse({
+              error: `Missing scene IDs: ${missingSceneIds.join(", ")}`,
+            });
+          }
+
+          const fallbackDuration =
+            updates.default_duration_ms ||
+            existing.default_duration_ms ||
+            15000;
+          updates.items = sceneIds.map(sceneId => ({
+            scene_id: sceneId,
+            duration_ms: fallbackDuration,
+          }));
+        }
+
+        const updated = await client.updatePlaylist(playlistId, updates);
+        return formatResponse({
+          success: true,
+          message: `Playlist '${playlistId}' upserted`,
+          playlist: updated,
+        });
+      }
+
+      case "ledfx_patch_playlist_items": {
+        const playlistId = String(args.playlist_id);
+        const playlist = await client.getPlaylist(playlistId);
+        if (!playlist) {
+          return formatResponse({ error: `Playlist '${playlistId}' not found` });
+        }
+
+        const items: LedFxPlaylistItem[] = [...(playlist.items || [])];
+        const operation = String(args.operation);
+        const index = args.index !== undefined ? Number(args.index) : undefined;
+        const toIndex = args.to_index !== undefined ? Number(args.to_index) : undefined;
+        const durationMs = args.duration_ms !== undefined ? Number(args.duration_ms) : undefined;
+        const sceneId = args.scene_id !== undefined ? String(args.scene_id) : undefined;
+
+        if (operation === "add") {
+          if (!sceneId) {
+            return formatResponse({ error: "scene_id is required for operation 'add'" });
+          }
+          const availableSceneIds = await getAvailableSceneIds(client);
+          if (!availableSceneIds.has(sceneId)) {
+            return formatResponse({ error: `Missing scene ID: ${sceneId}` });
+          }
+          items.push({
+            scene_id: sceneId,
+            duration_ms: durationMs || playlist.default_duration_ms || 15000,
+          });
+        } else if (operation === "remove") {
+          if (index !== undefined) {
+            if (index < 0 || index >= items.length) {
+              return formatResponse({ error: `index '${index}' out of range` });
+            }
+            items.splice(index, 1);
+          } else if (sceneId) {
+            const removeIndex = items.findIndex(item => item.scene_id === sceneId);
+            if (removeIndex < 0) {
+              return formatResponse({ error: `scene_id '${sceneId}' not present in playlist` });
+            }
+            items.splice(removeIndex, 1);
+          } else {
+            return formatResponse({ error: "Provide 'index' or 'scene_id' for operation 'remove'" });
+          }
+        } else if (operation === "move") {
+          if (index === undefined || toIndex === undefined) {
+            return formatResponse({ error: "index and to_index are required for operation 'move'" });
+          }
+          if (index < 0 || index >= items.length || toIndex < 0 || toIndex >= items.length) {
+            return formatResponse({ error: "index or to_index out of range" });
+          }
+          const [item] = items.splice(index, 1);
+          items.splice(toIndex, 0, item);
+        } else if (operation === "replace_duration") {
+          if (index === undefined || durationMs === undefined) {
+            return formatResponse({ error: "index and duration_ms are required for operation 'replace_duration'" });
+          }
+          if (index < 0 || index >= items.length) {
+            return formatResponse({ error: `index '${index}' out of range` });
+          }
+          items[index] = { ...items[index], duration_ms: durationMs };
+        } else {
+          return formatResponse({ error: `Unknown patch operation '${operation}'` });
+        }
+
+        const updated = await client.updatePlaylist(playlistId, { items });
+        return formatResponse({
+          success: true,
+          message: `Playlist '${playlistId}' patched with operation '${operation}'`,
+          playlist: updated,
+        });
+      }
+
       case "ledfx_delete_playlist": {
         await client.deletePlaylist(args.playlist_id);
         return formatResponse({
@@ -1522,6 +2081,12 @@ export async function handleToolCall(
       }
 
       case "ledfx_add_scene_to_playlist": {
+        const availableSceneIds = await getAvailableSceneIds(client);
+        if (!availableSceneIds.has(String(args.scene_id))) {
+          return formatResponse({
+            error: `Missing scene ID: ${args.scene_id}`,
+          });
+        }
         await client.addSceneToPlaylist(
           args.playlist_id,
           args.scene_id,
@@ -1791,10 +2356,35 @@ export async function handleToolCall(
     const errorMessage = error instanceof Error ? error.message : String(error);
     
     logger.toolResult(name, false, durationMs, errorMessage);
-    
-    return formatResponse({
-      error: true,
-      message: errorMessage,
-    });
+
+    if (error instanceof LedFxApiError) {
+      return formatToolError("LEDFX_API_ERROR", error.message, {
+        status: error.context.status,
+        status_text: error.context.statusText,
+        method: error.context.method,
+        endpoint: error.context.endpoint,
+        response_body: error.context.responseBody,
+        duration_ms: error.context.durationMs,
+      });
+    }
+
+    if (error instanceof LedFxConnectionError) {
+      return formatToolError("LEDFX_CONNECTION_ERROR", error.message, {
+        method: error.context.method,
+        endpoint: error.context.endpoint,
+        cause: error.context.cause,
+        duration_ms: error.context.durationMs,
+      });
+    }
+
+    if (error instanceof LedFxRequestError) {
+      return formatToolError("LEDFX_REQUEST_ERROR", error.message, {
+        method: error.context.method,
+        endpoint: error.context.endpoint,
+        duration_ms: error.context.durationMs,
+      });
+    }
+
+    return formatToolError("UNEXPECTED_ERROR", errorMessage);
   }
 }

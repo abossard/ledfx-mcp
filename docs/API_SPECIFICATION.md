@@ -1,824 +1,301 @@
-# LedFX API Specification
+# LedFX API Specification (Current)
 
-**Document Version:** 1.0  
-**Target LedFX Version:** 2.1.2+  
-**Last Updated:** 2026-02-01  
-**Official API Documentation:** https://docs.ledfx.app/en/latest/apis/api.html
+**Document Version:** 2.0  
+**Verified On:** 2026-02-06  
+**Target LedFX Version:** 2.1.4+  
+**Base URL:** `http://<host>:<port>/api`
 
-## Overview
+## Sources of Truth
 
-This document specifies the LedFX REST API endpoints that the MCP server implementation should support. The specification is based on the official LedFX API documentation and validated against the latest version.
+This spec was validated against:
 
-## Base Configuration
+- Official docs (latest): <https://docs.ledfx.app/en/latest/apis/api.html>
+- Scenes docs (latest): <https://docs.ledfx.app/en/latest/apis/scenes.html>
+- Playlists docs (latest): <https://docs.ledfx.app/en/latest/apis/playlists.html>
+- Latest release: <https://github.com/LedFx/LedFx/releases/tag/v2.1.4>
+- Upstream source (HEAD at verification time): <https://github.com/LedFx/LedFx/tree/0ef5218b3d6df6db22b85513228a55591f9580a2>
 
-- **Default Host:** `localhost`
-- **Default Port:** `8888`
-- **Base URL:** `http://{host}:{port}/api`
-- **Protocol:** HTTP/1.1
-- **Content-Type:** `application/json`
+## Why This Replaces the Previous Doc
 
-## API Endpoints
+The old file mixed historical behavior and outdated assumptions. This version is intentionally concise and focuses on the model details that matter when building MCP tooling:
 
-### 1. Server Information
+- Presets are effect-scoped in storage, but virtual-scoped for most operations.
+- Colors/palettes are a color-or-gradient store, not a first-class palette entity.
+- Blender is a normal effect whose config references other virtual IDs.
+- Scenes and playlists orchestrate virtual/effect state indirectly, with action semantics.
 
-#### GET /api/info
+## Core Data Model (Must-Know)
 
-Returns basic information about the LedFX instance.
+1. `Device` is physical output integration (WLED/OpenRGB/etc).
+2. `Virtual` is the control surface where effects run.
+3. `Effect` is attached to a virtual (`/virtuals/{id}/effects`).
+4. `Preset` library is keyed by effect type (`ledfx_presets` and `user_presets`), but the easiest create/apply flow is virtual-based.
+5. `Scene` stores per-virtual actions/config snapshots.
+6. `Playlist` stores ordered `scene_id` items only.
+7. `Colors/Gradients` are global stores (`/api/colors`); "palette" is convention, not native resource type.
+8. `Blender` is an effect that composes output from three source virtuals (`mask`, `foreground`, `background`).
 
-**Request:**
-- Method: `GET`
-- Path: `/api/info`
-- Body: None
+## Endpoint Matrix (Operational)
 
-**Response:**
+### Server and schema
+
+- `GET /api/info`
+- `GET /api/schema` (optionally with request body to request specific schema groups)
+
+`GET /api/info` commonly includes extra metadata fields beyond `url`, `name`, and `version` (for example `github_sha`, `is_release`, `developer_mode`).
+
+### Devices and virtuals
+
+- `GET /api/devices`
+- `GET /api/devices/{device_id}`
+- `GET /api/virtuals`
+- `PUT /api/virtuals` (global pause toggle)
+- `POST /api/virtuals` (create or update virtual config)
+- `GET /api/virtuals/{virtual_id}`
+- `PUT /api/virtuals/{virtual_id}` (set `active`)
+- `POST /api/virtuals/{virtual_id}` (update `segments`)
+- `DELETE /api/virtuals/{virtual_id}`
+
+### Effects
+
+- `GET /api/effects` (active effects by virtual)
+- `PUT /api/effects` with action:
+  - `clear_all_effects`
+  - `apply_global`
+  - `apply_global_effect`
+- `GET /api/effects/{effect_id}` (effect schema string)
+- `GET /api/virtuals/{virtual_id}/effects`
+- `POST /api/virtuals/{virtual_id}/effects`
+- `PUT /api/virtuals/{virtual_id}/effects`
+- `DELETE /api/virtuals/{virtual_id}/effects`
+
+### Presets
+
+- `GET /api/effects/{effect_id}/presets`
+- `PUT /api/effects/{effect_id}/presets` (rename)
+- `DELETE /api/effects/{effect_id}/presets` (delete)
+- `GET /api/virtuals/{virtual_id}/presets`
+- `PUT /api/virtuals/{virtual_id}/presets` (apply)
+- `POST /api/virtuals/{virtual_id}/presets` (save active effect as user preset)
+- `DELETE /api/virtuals/{virtual_id}/presets` (currently non-functional as a true preset delete; see quirks)
+
+### Scenes
+
+- `GET /api/scenes`
+- `PUT /api/scenes` actions:
+  - `activate`
+  - `activate_in` (requires `ms`)
+  - `deactivate`
+  - `rename` (requires `name`)
+- `POST /api/scenes` (create or update; update if `id` provided)
+- `DELETE /api/scenes` (body includes `id`)
+- `GET /api/scenes/{scene_id}`
+- `DELETE /api/scenes/{scene_id}`
+
+### Playlists
+
+- `GET /api/playlists`
+- `POST /api/playlists` (create or replace)
+- `PUT /api/playlists` actions:
+  - `start` (requires `id`, optional runtime `mode` and `timing` override)
+  - `stop`
+  - `pause`
+  - `resume`
+  - `next`
+  - `prev`
+  - `state`
+- `DELETE /api/playlists` (body includes `id`)
+- `GET /api/playlists/{id}`
+- `DELETE /api/playlists/{id}`
+
+### Colors and gradients
+
+- `GET /api/colors`
+- `POST /api/colors` (upsert map of IDs to values)
+- `DELETE /api/colors` (body: list of IDs)
+- `DELETE /api/colors/{color_id}`
+
+## Intricate Behavior Details
+
+### 1) Presets are tied to effect type, but workflow is virtual-centric
+
+### What is stored
+
+- Presets are stored by effect type in two categories:
+  - `ledfx_presets`
+  - `user_presets`
+
+### What GET on virtual presets actually means
+
+`GET /api/virtuals/{virtual_id}/presets`:
+
+- Requires virtual to exist.
+- Requires virtual to have an active effect.
+- Returns presets only for that active effect type.
+- Adds an `active` boolean per preset by comparing preset config to active effect config.
+
+### Apply preset
+
+`PUT /api/virtuals/{virtual_id}/presets` requires:
+
 ```json
 {
-  "url": "http://127.0.0.1:8888",
-  "name": "LedFx",
-  "version": "2.1.2"
+  "category": "ledfx_presets" | "user_presets",
+  "effect_id": "<effect_type>",
+  "preset_id": "<preset_id>"
 }
 ```
 
-**Fields:**
-- `url` (string): The base URL of the LedFX instance
-- `name` (string): The name of the LedFX instance
-- `version` (string): The LedFX version number
+Notes:
 
-**Status Codes:**
-- `200`: Success
-- `500`: Server error
+- `category=ledfx_presets` with `preset_id=reset` applies generated defaults for `effect_id`.
+- This call creates/sets an effect instance on the virtual.
 
----
+### Save preset
 
-### 2. Devices Management
+`POST /api/virtuals/{virtual_id}/presets`:
 
-#### GET /api/devices
+- Saves the virtual's current active effect config into `user_presets[effect_id]`.
+- Requires body `{ "name": "..." }`.
+- Generated preset key is ID-normalized from name.
 
-Get configuration of all devices.
+### Delete preset caveat
 
-**Request:**
-- Method: `GET`
-- Path: `/api/devices`
-- Body: None
+`DELETE /api/virtuals/{virtual_id}/presets` is marked TODO upstream and currently clears effect state rather than doing reliable preset deletion. For true preset deletion, use:
 
-**Response:**
+- `DELETE /api/effects/{effect_id}/presets` with `{ "category", "preset_id" }`
+
+### 2) Colors and "palettes" are not a dedicated palette model
+
+`/api/colors` is a key-value store with two domains:
+
+- `colors.{builtin,user}`
+- `gradients.{builtin,user}`
+
+`POST /api/colors` takes an object like:
+
 ```json
 {
-  "status": "success",
-  "devices": {
-    "device-id-1": {
-      "id": "device-id-1",
-      "type": "wled",
-      "config": {
-        "name": "My LED Strip",
-        "pixel_count": 144,
-        "ip_address": "192.168.1.100"
-      }
-    }
-  }
+  "my_color": "#ff00ff",
+  "my_gradient": "linear-gradient(90deg, #ff0000 0%, #0000ff 100%)"
 }
 ```
 
-**Status Codes:**
-- `200`: Success
-- `500`: Server error
+Behavior:
 
-#### GET /api/devices/{device_id}
+- If value validates as a color, key goes to user colors.
+- Otherwise it is treated as gradient string and stored in user gradients.
 
-Get information about a specific device.
+Implication for MCP:
 
-**Request:**
-- Method: `GET`
-- Path: `/api/devices/{device_id}`
-- Parameters:
-  - `device_id` (string): Unique identifier of the device
+- A "palette" should be documented as naming convention over user gradients.
+- Reusing one palette across many presets means copying the same gradient value into each effect config/preset; there is no separate palette reference object.
 
-**Response:**
+### 3) Scenes support action-based orchestration per virtual
+
+Scene virtual entries can use explicit action semantics:
+
+- `ignore`: leave virtual unchanged.
+- `stop`: clear effect.
+- `forceblack`: apply `singleColor` with black.
+- `activate`: apply effect.
+
+For `activate`:
+
+- `type` is required.
+- Either `config` or `preset` is used.
+- If `preset` is set, scene activation resolves preset by effect type at runtime.
+
+Important scene POST rules:
+
+- With `id`: updates existing scene.
+- Without `id`: creates a new scene; dedupes ID from name.
+- If `virtuals` omitted on create: captures a snapshot of current virtual effects.
+
+### 4) Playlists are scene playlists, not effect/preset playlists
+
+Playlist items schema is:
+
 ```json
 {
-  "id": "device-id-1",
-  "type": "wled",
+  "scene_id": "<scene_id>",
+  "duration_ms": 15000
+}
+```
+
+Key semantics:
+
+- Items list only references scenes.
+- Empty `items` is valid and means "dynamic all scenes" at start time.
+- `mode` is `sequence` or `shuffle`.
+- Runtime control is via `PUT /api/playlists` action API, including `state`.
+
+### 5) Blender effect model (why it feels unusual)
+
+Blender is configured like any other effect on a target virtual, but its config references other virtual IDs:
+
+```json
+{
+  "type": "blender",
   "config": {
-    "name": "My LED Strip",
-    "pixel_count": 144,
-    "ip_address": "192.168.1.100"
-  },
-  "active_virtuals": []
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `404`: Device not found
-- `500`: Server error
-
-#### POST /api/devices
-
-Add a new device to LedFX.
-
-**Request:**
-- Method: `POST`
-- Path: `/api/devices`
-- Body:
-```json
-{
-  "type": "wled",
-  "config": {
-    "name": "New LED Strip",
-    "pixel_count": 100,
-    "ip_address": "192.168.1.101"
+    "mask": "virtual-mask",
+    "foreground": "virtual-fore",
+    "background": "virtual-back",
+    "mask_stretch": "2d full",
+    "foreground_stretch": "2d full",
+    "background_stretch": "2d full",
+    "invert_mask": false,
+    "mask_cutoff": 1.0
   }
 }
 ```
 
-**Response:**
-```json
-{
-  "status": "success",
-  "device": {
-    "id": "new-device-id",
-    "type": "wled",
-    "config": {
-      "name": "New LED Strip",
-      "pixel_count": 100,
-      "ip_address": "192.168.1.101"
-    }
-  }
-}
-```
+Runtime behavior:
 
-**Status Codes:**
-- `200`: Success
-- `400`: Invalid configuration
-- `500`: Server error
+- Blender reads frames/matrices from those source virtuals every render cycle.
+- If sources are missing/not ready, render can no-op for that frame.
+- Stretching is applied when source dimensions differ.
 
-#### PUT /api/devices/{device_id}
+Operational implication:
 
-Update device configuration.
+- Treat blender as cross-virtual dependency graph.
+- Scene/playlist definitions must preserve source virtual lifecycle and effects, not only the blender target virtual.
 
-**Request:**
-- Method: `PUT`
-- Path: `/api/devices/{device_id}`
-- Body:
-```json
-{
-  "config": {
-    "name": "Updated Name",
-    "pixel_count": 150
-  }
-}
-```
+## Request/Response Shape Caveats
 
-**Response:**
-```json
-{
-  "status": "success",
-  "device": {
-    "id": "device-id",
-    "type": "wled",
-    "config": {
-      "name": "Updated Name",
-      "pixel_count": 150,
-      "ip_address": "192.168.1.100"
-    }
-  }
-}
-```
+LedFX API is not fully uniform. Clients should handle mixed response envelopes:
 
-**Status Codes:**
-- `200`: Success
-- `404`: Device not found
-- `400`: Invalid configuration
-- `500`: Server error
+- Many endpoints: `{ "status": "success", ... }`
+- `GET /api/virtuals/{id}` returns `{ "status": "success", "<id>": { ... } }`
+- Some PUT/DELETE endpoints return message-style payloads rather than full objects.
+- `GET /api/schema` body-filtering is defined in source, but some running instances effectively return full schema even when a body is sent.
 
-#### DELETE /api/devices/{device_id}
+## Practical MCP Guidance
 
-Delete a device.
+1. Effects: always treat virtual ID as required control key.
+2. Presets: validate virtual has active effect before preset operations.
+3. Palette UX: represent palettes as named user gradients.
+4. Playlists: build through scene IDs; do not model playlist items as effect presets.
+5. Blender workflows: provision source virtuals first, then blender target, then scene/playlist orchestration.
 
-**Request:**
-- Method: `DELETE`
-- Path: `/api/devices/{device_id}`
+## Minimal Validation Checklist for MCP Integrations
 
-**Response:**
-```json
-{
-  "status": "success"
-}
-```
+- Verify `/api/info.version` and log it.
+- Pull `/api/schema` at startup to discover effect schemas dynamically.
+- When applying preset:
+  - check virtual exists
+  - check active effect or explicit `effect_id`
+  - prefer `/api/effects/{effect_id}/presets` for catalog inspection
+- When creating playlist:
+  - validate all `scene_id` values exist
+  - allow empty `items` only if dynamic-all-scenes behavior is desired
+- For blender:
+  - validate source virtual IDs exist before applying effect
 
-**Status Codes:**
-- `200`: Success
-- `404`: Device not found
-- `500`: Server error
+## Version Notes
 
----
+This document is intentionally scoped to the currently released `2.1.4` behavior (plus source at commit `0ef5218`). If you target older builds, re-check:
 
-### 3. Virtuals Management
-
-Virtuals are logical LED strips that can span multiple physical devices and have effects applied to them.
-
-#### GET /api/virtuals
-
-Get configuration of all virtuals.
-
-**Request:**
-- Method: `GET`
-- Path: `/api/virtuals`
-
-**Response:**
-```json
-{
-  "status": "success",
-  "virtuals": {
-    "virtual-id-1": {
-      "id": "virtual-id-1",
-      "config": {
-        "name": "Main Strip",
-        "pixel_count": 200
-      },
-      "active": true,
-      "effect": {
-        "type": "rainbow",
-        "config": {}
-      }
-    }
-  }
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `500`: Server error
-
-#### POST /api/virtuals
-
-Create a new virtual.
-
-**Request:**
-- Method: `POST`
-- Path: `/api/virtuals`
-- Body:
-```json
-{
-  "config": {
-    "name": "New Virtual",
-    "pixel_count": 100
-  },
-  "segments": [
-    ["device-id-1", 0, 99, false]
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "virtual": {
-    "id": "new-virtual-id",
-    "config": {
-      "name": "New Virtual",
-      "pixel_count": 100
-    }
-  }
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `400`: Invalid configuration
-- `500`: Server error
-
----
-
-### 4. Effects Management
-
-#### GET /api/virtuals/{virtual_id}/effects
-
-Get the active effect configuration for a virtual.
-
-**Request:**
-- Method: `GET`
-- Path: `/api/virtuals/{virtual_id}/effects`
-
-**Response:**
-```json
-{
-  "status": "success",
-  "effect": {
-    "type": "rainbow",
-    "config": {
-      "speed": 50,
-      "brightness": 1.0
-    }
-  }
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `404`: Virtual not found
-- `500`: Server error
-
-#### POST /api/virtuals/{virtual_id}/effects
-
-Set a new effect on a virtual.
-
-**Request:**
-- Method: `POST`
-- Path: `/api/virtuals/{virtual_id}/effects`
-- Body:
-```json
-{
-  "type": "rainbow",
-  "config": {
-    "speed": 50,
-    "brightness": 1.0
-  }
-}
-```
-
-**Optional Parameters:**
-- `fallback` (boolean|number): Set fallback behavior
-  - `true`: Enable fallback after 300 seconds
-  - `false`: No fallback
-  - Number: Fallback after N seconds
-
-**Response:**
-```json
-{
-  "status": "success",
-  "effect": {
-    "type": "rainbow",
-    "config": {
-      "speed": 50,
-      "brightness": 1.0
-    }
-  }
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `404`: Virtual not found
-- `400`: Invalid effect configuration
-- `500`: Server error
-
-#### PUT /api/virtuals/{virtual_id}/effects
-
-Update the active effect configuration.
-
-**Request:**
-- Method: `PUT`
-- Path: `/api/virtuals/{virtual_id}/effects`
-- Body:
-```json
-{
-  "config": {
-    "speed": 75
-  }
-}
-```
-
-**Special Value:**
-- `"RANDOMIZE"`: Generates random effect configuration
-
-**Response:**
-```json
-{
-  "status": "success",
-  "effect": {
-    "type": "rainbow",
-    "config": {
-      "speed": 75,
-      "brightness": 1.0
-    }
-  }
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `404`: Virtual not found
-- `400`: Invalid configuration
-- `500`: Server error
-
-#### DELETE /api/virtuals/{virtual_id}/effects
-
-Clear the active effect from a virtual.
-
-**Request:**
-- Method: `DELETE`
-- Path: `/api/virtuals/{virtual_id}/effects`
-
-**Response:**
-```json
-{
-  "status": "success"
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `404`: Virtual not found
-- `500`: Server error
-
----
-
-### 5. Scenes Management
-
-Scenes are pre-configured combinations of effects across multiple virtuals.
-
-#### GET /api/scenes
-
-List all available scenes.
-
-**Request:**
-- Method: `GET`
-- Path: `/api/scenes`
-
-**Response:**
-```json
-{
-  "status": "success",
-  "scenes": {
-    "scene-id-1": {
-      "id": "scene-id-1",
-      "name": "Party Mode",
-      "virtuals": {
-        "virtual-id-1": {
-          "effect": {
-            "type": "rainbow",
-            "config": {}
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `500`: Server error
-
-#### PUT /api/scenes
-
-Activate a scene.
-
-**Request:**
-- Method: `PUT`
-- Path: `/api/scenes`
-- Body:
-```json
-{
-  "id": "scene-id-1",
-  "action": "activate"
-}
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "scene": {
-    "id": "scene-id-1",
-    "name": "Party Mode"
-  }
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `404`: Scene not found
-- `500`: Server error
-
-#### POST /api/scenes
-
-Create a new scene from current configuration.
-
-**Request:**
-- Method: `POST`
-- Path: `/api/scenes`
-- Body:
-```json
-{
-  "name": "New Scene",
-  "scene_tags": "chill,ambient"
-}
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "scene": {
-    "id": "new-scene-id",
-    "name": "New Scene"
-  }
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `400`: Invalid configuration
-- `500`: Server error
-
-#### DELETE /api/scenes
-
-Delete a scene.
-
-**Request:**
-- Method: `DELETE`
-- Path: `/api/scenes`
-- Body:
-```json
-{
-  "id": "scene-id-1"
-}
-```
-
-**Response:**
-```json
-{
-  "status": "success"
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `404`: Scene not found
-- `500`: Server error
-
----
-
-### 6. Schema Queries
-
-#### GET /api/schema
-
-Get all schema definitions.
-
-**Request:**
-- Method: `GET`
-- Path: `/api/schema`
-
-**Response:**
-```json
-{
-  "devices": { /* device schemas */ },
-  "effects": { /* effect schemas */ },
-  "virtuals": { /* virtual schemas */ },
-  "audio": { /* audio schemas */ }
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `500`: Server error
-
-#### GET /api/schema/{schema_type}
-
-Get a specific schema type.
-
-**Request:**
-- Method: `GET`
-- Path: `/api/schema/{schema_type}`
-- Parameters:
-  - `schema_type`: One of `devices`, `effects`, `virtuals`, `audio`, `integrations`
-
-**Response:**
-```json
-{
-  "wled": {
-    "schema": {
-      "type": "object",
-      "properties": {
-        "name": {"type": "string"},
-        "pixel_count": {"type": "integer"},
-        "ip_address": {"type": "string"}
-      }
-    }
-  }
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `404`: Schema type not found
-- `500`: Server error
-
----
-
-### 7. Audio Devices
-
-#### GET /api/audio/devices
-
-Get available audio input devices.
-
-**Request:**
-- Method: `GET`
-- Path: `/api/audio/devices`
-
-**Response:**
-```json
-{
-  "status": "success",
-  "active_device_index": 1,
-  "devices": {
-    "0": "Microsoft Sound Mapper - Input",
-    "1": "Microphone (Realtek High Definition Audio)",
-    "2": "Stereo Mix (Realtek High Definition Audio)"
-  }
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `500`: Server error
-
-#### PUT /api/audio/devices
-
-Set the active audio input device.
-
-**Request:**
-- Method: `PUT`
-- Path: `/api/audio/devices`
-- Body:
-```json
-{
-  "audio_device": 2
-}
-```
-
-**Response:**
-```json
-{
-  "status": "success"
-}
-```
-
-**Error Response:**
-```json
-{
-  "status": "failed",
-  "reason": "Invalid device index [99]"
-}
-```
-
-**Status Codes:**
-- `200`: Success (or failed status in body)
-- `500`: Server error
-
----
-
-### 8. Configuration
-
-#### GET /api/config
-
-Get LedFX configuration.
-
-**Request:**
-- Method: `GET`
-- Path: `/api/config`
-- Body (optional):
-  - Single key: `"audio"`
-  - Multiple keys: `["audio", "devices", "scenes"]`
-  - No body: Returns full configuration
-
-**Response:**
-```json
-{
-  "host": "127.0.0.1",
-  "port": 8888,
-  "audio": {
-    "min_volume": 0.3
-  },
-  "devices": {},
-  "virtuals": {},
-  "scenes": {}
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `500`: Server error
-
-#### PUT /api/config
-
-Update LedFX configuration (may trigger restart).
-
-**Request:**
-- Method: `PUT`
-- Path: `/api/config`
-- Body:
-```json
-{
-  "audio": {
-    "min_volume": 0.5
-  },
-  "port": 8080
-}
-```
-
-**Response:**
-```json
-{
-  "status": "success"
-}
-```
-
-**Status Codes:**
-- `200`: Success
-- `400`: Invalid configuration
-- `500`: Server error
-
----
-
-## Effect Types
-
-Common effect types available in LedFX (may vary by version):
-
-- `rainbow`: Classic rainbow animation
-- `pulse`: Pulsing effect to music
-- `wavelength`: Wave-like patterns
-- `energy`: Energy-based visualization
-- `singleColor`: Single solid color
-- `gradient`: Color gradient effect
-- `strobe`: Strobe light effect
-- `scroll`: Scrolling patterns
-
-Each effect has its own configuration schema available via `/api/schema/effects`.
-
----
-
-## Error Handling
-
-All endpoints may return error responses in the following format:
-
-```json
-{
-  "status": "failed",
-  "reason": "Error description"
-}
-```
-
-Or:
-
-```json
-{
-  "status": "error",
-  "error": "Error description"
-}
-```
-
----
-
-## WebSocket Endpoints
-
-### /api/log
-
-Opens a WebSocket connection for real-time logging.
-
-**Note:** This endpoint is not implemented in the current MCP server version as it requires WebSocket support.
-
----
-
-## Version Compatibility
-
-This specification is based on LedFX version 2.1.2 and later. Some endpoints may not be available in earlier versions. Always check the `/api/info` endpoint to verify the server version.
-
-### Version History
-
-- **2.1.x**: Current stable release
-- **2.0.x**: Previous stable release
-- **0.x.x**: Beta/development releases
-
----
-
-## References
-
-- [LedFX Official Documentation](https://docs.ledfx.app/en/latest/)
-- [LedFX REST API Reference](https://docs.ledfx.app/en/latest/apis/api.html)
-- [LedFX GitHub Repository](https://github.com/LedFx/LedFx)
-- [LedFX Docker Image](https://hub.docker.com/r/ledfxorg/ledfx)
-- [Postman API Collection](https://documenter.getpostman.com/view/5403870/TVzNHyyw)
-
----
-
-## Notes for Implementation
-
-1. **Virtuals vs Devices**: LedFX uses a two-tier model:
-   - **Devices**: Physical LED hardware (WLED, ESP8266, etc.)
-   - **Virtuals**: Logical LED strips that can span multiple devices
-   - Effects are applied to **virtuals**, not directly to devices
-
-2. **Effect Configuration**: Each effect type has its own configuration schema. Use `/api/schema/effects` to get valid parameters.
-
-3. **Scene Activation**: Scenes can activate multiple virtuals with different effects simultaneously.
-
-4. **Naming Conventions**: 
-   - Device IDs are typically lowercase with hyphens
-   - Virtual IDs follow the same convention
-   - Scene IDs are user-defined
-
-5. **Future Endpoints**: Some endpoints marked as "(upcoming)" in the official docs may not be available yet. Always verify availability against the target LedFX version.
+- `virtual_presets` delete behavior
+- scene action/preset inference fields
+- playlists action set and state payload

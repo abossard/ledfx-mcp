@@ -18,60 +18,102 @@ export interface LedFxConfig {
   port: number;
 }
 
+export type LedFxTransitionMode =
+  | "Add"
+  | "Dissolve"
+  | "Push"
+  | "Slide"
+  | "Iris"
+  | "Through White"
+  | "Through Black"
+  | "None";
+
 export interface LedFxDevice {
   id: string;
   name: string;
   type: string;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
 }
 
 export interface LedFxVirtual {
   id: string;
   config: {
     name: string;
-    pixel_count: number;
+    pixel_count?: number;
+    transition_mode?: LedFxTransitionMode;
+    transition_time?: number;
+    [key: string]: unknown;
   };
   active: boolean;
   effect?: {
     type: string;
-    config: Record<string, any>;
+    config: Record<string, unknown>;
   };
   segments?: Array<[string, number, number, boolean]>;
 }
 
-export interface LedFxScene {
-  id: string;
-  name: string;
-  scene_tags?: string;
-  virtuals?: Record<string, LedFxSceneVirtual>;
+export interface LedFxSceneVirtual {
+  type?: string;
+  config?: Record<string, unknown>;
+  action?: "activate" | "ignore" | "stop" | "forceblack";
+  preset?: string;
+  preset_category?: "ledfx_presets" | "user_presets";
 }
 
-export interface LedFxSceneVirtual {
-  type: string;
-  config: Record<string, any>;
-  action?: "activate" | "ignore" | "stop" | "forceblack";
+export interface LedFxSceneConfig {
+  name: string;
+  scene_tags?: string | null;
+  scene_image?: string | null;
+  scene_puturl?: string | null;
+  scene_payload?: string | null;
+  scene_midiactivate?: string | null;
+  virtuals?: Record<string, LedFxSceneVirtual>;
+  active?: boolean;
+}
+
+export interface LedFxScene extends LedFxSceneConfig {
+  id: string;
 }
 
 export interface LedFxPreset {
   name: string;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
+}
+
+export interface LedFxPlaylistItem {
+  scene_id: string;
+  duration_ms?: number;
+}
+
+export interface LedFxPlaylist {
+  id: string;
+  name: string;
+  items: LedFxPlaylistItem[];
+  mode?: "sequence" | "shuffle";
+  default_duration_ms?: number;
+  timing?: Record<string, any>;
+  tags?: string[];
+  image?: string | null;
+  [key: string]: unknown;
+}
+
+export interface LedFxPlaylistState {
+  active_playlist: string | null;
+  index: number;
+  paused: boolean;
+  order?: number[];
+  scenes?: string[];
+  scene_id?: string;
+  mode?: "sequence" | "shuffle";
+  timing?: Record<string, unknown>;
+  effective_duration_ms?: number;
+  remaining_ms?: number;
 }
 
 export interface EffectSchema {
   schema: {
     type: string;
-    properties: Record<string, any>;
-  };
-}
-
-export interface LedFxColorsResponse {
-  colors: {
-    builtin: Record<string, string>;
-    user: Record<string, string>;
-  };
-  gradients: {
-    builtin: Record<string, string>;
-    user: Record<string, string>;
+    properties: Record<string, unknown>;
   };
 }
 
@@ -90,7 +132,7 @@ export interface LedFxColorsResponse {
 
 export interface BackupVirtualEffect {
   type: string;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
 }
 
 export interface BackupVirtual {
@@ -98,7 +140,7 @@ export interface BackupVirtual {
   config: {
     name: string;
     pixel_count?: number;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   active: boolean;
   effect?: BackupVirtualEffect;
@@ -181,6 +223,41 @@ export interface RestoreResult {
   };
 }
 
+export interface LedFxErrorContext {
+  method: string;
+  endpoint: string;
+  url: string;
+  durationMs: number;
+  status?: number;
+  statusText?: string;
+  responseBody?: string;
+  cause?: string;
+}
+
+export class LedFxRequestError extends Error {
+  readonly context: LedFxErrorContext;
+
+  constructor(message: string, context: LedFxErrorContext) {
+    super(message);
+    this.name = "LedFxRequestError";
+    this.context = context;
+  }
+}
+
+export class LedFxApiError extends LedFxRequestError {
+  constructor(message: string, context: LedFxErrorContext) {
+    super(message, context);
+    this.name = "LedFxApiError";
+  }
+}
+
+export class LedFxConnectionError extends LedFxRequestError {
+  constructor(message: string, context: LedFxErrorContext) {
+    super(message, context);
+    this.name = "LedFxConnectionError";
+  }
+}
+
 /**
  * Client for interacting with LedFX instance
  * Deep module with simple interface hiding HTTP complexity
@@ -231,10 +308,19 @@ export class LedFxClient {
         
         logger.httpResponse(method, endpoint, response.status, durationMs, errorBody);
         
-        throw new Error(
+        throw new LedFxApiError(
           `LedFX API error: ${response.status} ${response.statusText}${
             errorBody ? ` - ${errorBody}` : ""
-          }`
+          }`,
+          {
+            method,
+            endpoint,
+            url,
+            durationMs,
+            status: response.status,
+            statusText: response.statusText,
+            responseBody: errorBody,
+          }
         );
       }
 
@@ -246,7 +332,7 @@ export class LedFxClient {
       const durationMs = Date.now() - startTime;
       
       // Only wrap network/connection errors, not API errors
-      if (error instanceof Error && error.message.startsWith("LedFX API error:")) {
+      if (error instanceof LedFxRequestError) {
         throw error; // Re-throw API errors as-is
       }
       
@@ -256,7 +342,13 @@ export class LedFxClient {
       
       logger.error(`HTTP request failed`, { endpoint, error: errorMessage, durationMs });
       
-      throw new Error(errorMessage);
+      throw new LedFxConnectionError(errorMessage, {
+        method,
+        endpoint,
+        url,
+        durationMs,
+        cause: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -323,6 +415,35 @@ export class LedFxClient {
       method: "PUT",
       body: JSON.stringify({ active }),
     });
+  }
+
+  /**
+   * Update virtual configuration fields (action)
+   */
+  async updateVirtualConfig(
+    virtualId: string,
+    config: Record<string, unknown>,
+    options?: {
+      active?: boolean;
+    }
+  ): Promise<LedFxVirtual> {
+    const response = await this.request<{
+      status?: string;
+      virtual?: LedFxVirtual;
+    }>("/virtuals", {
+      method: "POST",
+      body: JSON.stringify({
+        id: virtualId,
+        ...(options?.active !== undefined ? { active: options.active } : {}),
+        config,
+      }),
+    });
+
+    if (response?.virtual) {
+      return response.virtual;
+    }
+
+    return await this.getVirtual(virtualId);
   }
 
   /**
@@ -398,6 +519,24 @@ export class LedFxClient {
   }
 
   /**
+   * Get presets for a specific effect type (action)
+   */
+  async getEffectPresets(effectId: string): Promise<{
+    ledfx_presets: Record<string, LedFxPreset>;
+    user_presets: Record<string, LedFxPreset>;
+  }> {
+    const response = await this.request<{
+      ledfx_presets: Record<string, LedFxPreset>;
+      user_presets: Record<string, LedFxPreset>;
+    }>(`/effects/${encodeURIComponent(effectId)}/presets`);
+
+    return {
+      ledfx_presets: response.ledfx_presets || {},
+      user_presets: response.user_presets || {},
+    };
+  }
+
+  /**
    * Save current effect config as a user preset (action)
    */
   async savePreset(
@@ -466,10 +605,35 @@ export class LedFxClient {
    * Get all scenes (action)
    */
   async getScenes(): Promise<LedFxScene[]> {
-    const response = await this.request<{ scenes: Record<string, LedFxScene> }>(
+    const response = await this.request<{
+      scenes: Record<string, Partial<LedFxSceneConfig>>;
+    }>(
       "/scenes"
     );
-    return Object.values(response.scenes || {});
+    return Object.entries(response.scenes || {}).map(([sceneId, scene]) =>
+      this.normalizeScene(sceneId, scene)
+    );
+  }
+
+  /**
+   * Get a specific scene (action)
+   */
+  async getScene(sceneId: string): Promise<LedFxScene> {
+    const response = await this.request<any>(`/scenes/${encodeURIComponent(sceneId)}`);
+
+    if (response?.scene?.id && response?.scene?.config) {
+      return this.normalizeScene(response.scene.id, response.scene.config);
+    }
+
+    if (response?.scene?.id) {
+      return this.normalizeScene(response.scene.id, response.scene);
+    }
+
+    if (response?.[sceneId]) {
+      return this.normalizeScene(sceneId, response[sceneId]);
+    }
+
+    throw new Error(`Unexpected scene response payload for '${sceneId}'`);
   }
 
   /**
@@ -504,6 +668,43 @@ export class LedFxClient {
   }
 
   /**
+   * Update an existing scene (action)
+   */
+  async updateScene(
+    sceneId: string,
+    updates: {
+      name?: string;
+      sceneTags?: string | null;
+      virtuals?: Record<string, LedFxSceneVirtual>;
+      snapshot?: boolean;
+    }
+  ): Promise<LedFxScene> {
+    const response = await this.request<{
+      status: string;
+      scene?: {
+        id?: string;
+        config?: Partial<LedFxSceneConfig>;
+      };
+    }>("/scenes", {
+      method: "POST",
+      body: JSON.stringify({
+        id: sceneId,
+        ...(updates.name !== undefined ? { name: updates.name } : {}),
+        ...(updates.sceneTags !== undefined ? { scene_tags: updates.sceneTags } : {}),
+        ...(updates.virtuals !== undefined ? { virtuals: updates.virtuals } : {}),
+        ...(updates.snapshot !== undefined ? { snapshot: updates.snapshot } : {}),
+      }),
+    });
+
+    if (response.scene?.id && response.scene.config) {
+      return this.normalizeScene(response.scene.id, response.scene.config);
+    }
+
+    // Fallback to fresh read if server response omitted scene payload
+    return await this.getScene(sceneId);
+  }
+
+  /**
    * Delete a scene (action)
    */
   async deleteScene(sceneId: string): Promise<void> {
@@ -513,6 +714,23 @@ export class LedFxClient {
         id: sceneId,
       }),
     });
+  }
+
+  /**
+   * Convert a scene payload to a normalized model with explicit id.
+   */
+  private normalizeScene(sceneId: string, scene: Partial<LedFxSceneConfig>): LedFxScene {
+    return {
+      id: sceneId,
+      name: scene.name || sceneId,
+      scene_tags: scene.scene_tags,
+      scene_image: scene.scene_image,
+      scene_puturl: scene.scene_puturl,
+      scene_payload: scene.scene_payload,
+      scene_midiactivate: scene.scene_midiactivate,
+      virtuals: scene.virtuals || {},
+      active: scene.active ?? false,
+    };
   }
 
   /**
@@ -592,15 +810,15 @@ export class LedFxClient {
   /**
    * Get all playlists from LedFX (action)
    */
-  async getPlaylists(): Promise<Record<string, any>> {
-    const response = await this.request<{ playlists: Record<string, any> }>("/playlists");
+  async getPlaylists(): Promise<Record<string, LedFxPlaylist>> {
+    const response = await this.request<{ playlists: Record<string, LedFxPlaylist> }>("/playlists");
     return response.playlists || {};
   }
 
   /**
    * Get a specific playlist (action)
    */
-  async getPlaylist(playlistId: string): Promise<Record<string, any> | null> {
+  async getPlaylist(playlistId: string): Promise<LedFxPlaylist | null> {
     const playlists = await this.getPlaylists();
     return playlists[playlistId] || null;
   }
@@ -633,10 +851,23 @@ export class LedFxClient {
   /**
    * Get playlist playback status (action)
    */
-  async getPlaylistStatus(): Promise<Record<string, any>> {
-    // LedFX doesn't have a dedicated status endpoint, but we can try to get info
-    const playlists = await this.getPlaylists();
-    return { playlists };
+  async getPlaylistStatus(): Promise<LedFxPlaylistState> {
+    const response = await this.request<{
+      status: string;
+      data?: {
+        state?: LedFxPlaylistState;
+      };
+    }>("/playlists", {
+      method: "PUT",
+      body: JSON.stringify({
+        action: "state",
+      }),
+    });
+    return response.data?.state || {
+      active_playlist: null,
+      index: 0,
+      paused: false,
+    };
   }
 
   /**
@@ -645,13 +876,21 @@ export class LedFxClient {
   async createPlaylist(
     id: string,
     name: string,
-    items: Array<{ scene_id: string; duration_ms?: number }>,
+    items: LedFxPlaylistItem[],
     options?: {
       mode?: "sequence" | "shuffle";
       default_duration_ms?: number;
+      timing?: Record<string, any>;
+      tags?: string[];
+      image?: string | null;
     }
-  ): Promise<Record<string, any>> {
-    const response = await this.request<{ status: string; data: { playlist: Record<string, any> } }>("/playlists", {
+  ): Promise<LedFxPlaylist> {
+    const response = await this.request<{
+      status: string;
+      data?: {
+        playlist?: LedFxPlaylist;
+      };
+    }>("/playlists", {
       method: "POST",
       body: JSON.stringify({
         id,
@@ -659,41 +898,69 @@ export class LedFxClient {
         items,
         mode: options?.mode || "sequence",
         default_duration_ms: options?.default_duration_ms || 15000,
+        ...(options?.timing ? { timing: options.timing } : {}),
+        ...(options?.tags ? { tags: options.tags } : {}),
+        ...(options?.image !== undefined ? { image: options.image } : {}),
       }),
     });
-    return response.data?.playlist || {};
+    return response.data?.playlist || {
+      id,
+      name,
+      items,
+      mode: options?.mode || "sequence",
+      default_duration_ms: options?.default_duration_ms || 15000,
+      timing: options?.timing,
+      tags: options?.tags,
+      image: options?.image,
+    };
   }
 
   /**
    * Update an existing playlist (action)
-   * Note: LedFX doesn't support update, so we delete and recreate
+   * Uses LedFX playlist upsert semantics (POST create_or_replace)
    */
   async updatePlaylist(
     id: string,
     updates: {
       name?: string;
-      items?: Array<{ scene_id: string; duration_ms?: number }>;
+      items?: LedFxPlaylistItem[];
       mode?: "sequence" | "shuffle";
       default_duration_ms?: number;
+      timing?: Record<string, any>;
+      tags?: string[];
+      image?: string | null;
     }
-  ): Promise<void> {
+  ): Promise<LedFxPlaylist> {
     // Get current playlist
     const current = await this.getPlaylist(id);
     if (!current) throw new Error(`Playlist '${id}' not found`);
 
-    // Delete existing
-    await this.deletePlaylist(id);
-
-    // Recreate with updates
-    await this.createPlaylist(
+    // Upsert existing with merged values (safe in-place replacement)
+    const merged: LedFxPlaylist = {
+      ...current,
+      ...updates,
       id,
-      updates.name || current.name,
-      updates.items || current.items,
-      {
-        mode: updates.mode || current.mode || "sequence",
-        default_duration_ms: updates.default_duration_ms || current.default_duration_ms || 15000,
-      }
-    );
+      name: updates.name || current.name,
+      items: updates.items || current.items || [],
+      mode: updates.mode || current.mode || "sequence",
+      default_duration_ms:
+        updates.default_duration_ms || current.default_duration_ms || 15000,
+      timing: updates.timing !== undefined ? updates.timing : current.timing,
+      tags: updates.tags !== undefined ? updates.tags : current.tags,
+      image: updates.image !== undefined ? updates.image : current.image,
+    };
+
+    const response = await this.request<{
+      status: string;
+      data?: {
+        playlist?: LedFxPlaylist;
+      };
+    }>("/playlists", {
+      method: "POST",
+      body: JSON.stringify(merged),
+    });
+
+    return response.data?.playlist || merged;
   }
 
   /**

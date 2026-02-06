@@ -163,8 +163,10 @@ describe('End-to-End MCP Server Tests', () => {
       const result = await handleToolCall('unknown_tool', {});
       
       const data = JSON.parse(result.content[0].text);
-      expect(data.error).toBe(true);
-      expect(data.message).toContain('Unknown tool');
+      expect(data.ok).toBe(false);
+      expect(data.error).toBeDefined();
+      expect(data.error.code).toBe('UNEXPECTED_ERROR');
+      expect(data.error.message).toContain('Unknown tool');
     });
 
     test('should handle missing palette gracefully', async () => {
