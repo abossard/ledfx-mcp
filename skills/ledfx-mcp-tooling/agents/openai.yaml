@@ -1,0 +1,3 @@
+interface:
+  display_name: "LedFX MCP Tooling"
+  short_description: "Build schema-safe LedFX MCP calls and fallback chains"

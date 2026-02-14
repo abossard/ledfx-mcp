@@ -41,10 +41,132 @@ const LEDFX_TRANSITION_MODES: ReadonlyArray<LedFxTransitionMode> = [
   "Through Black",
   "None",
 ];
+const HEX_COLOR_REGEX = /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const GRADIENT_DIRECTION_REGEX =
+  /^-?\d+(?:\.\d+)?(?:deg|rad|turn)$/i;
+const TO_DIRECTION_REGEX =
+  /^to\s+(?:left|right|top|bottom)(?:\s+(?:left|right|top|bottom))?$/i;
+const PERCENT_TOKEN_REGEX = /(-?\d+(?:\.\d+)?)%/g;
 
 function buildPaletteGradient(colors: string[]): string {
-  const stops = colors.join(", ");
-  return `linear-gradient(90deg, ${stops})`;
+  if (colors.length === 0) {
+    return "linear-gradient(90deg, #000000 0%, #000000 100%)";
+  }
+
+  if (colors.length === 1) {
+    return `linear-gradient(90deg, ${colors[0]} 0%, ${colors[0]} 100%)`;
+  }
+
+  const stops = colors.map((color, index) => {
+    const pct = Math.round((index / (colors.length - 1)) * 100);
+    return `${color} ${pct}%`;
+  });
+
+  return `linear-gradient(90deg, ${stops.join(", ")})`;
+}
+
+function splitTopLevelComma(input: string): string[] {
+  const tokens: string[] = [];
+  let depth = 0;
+  let current = "";
+
+  for (const char of input) {
+    if (char === "(") {
+      depth += 1;
+      current += char;
+      continue;
+    }
+    if (char === ")") {
+      depth = Math.max(0, depth - 1);
+      current += char;
+      continue;
+    }
+    if (char === "," && depth === 0) {
+      tokens.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+
+  if (current.trim().length > 0) {
+    tokens.push(current.trim());
+  }
+
+  return tokens;
+}
+
+function isValidLedFxColor(value: string): boolean {
+  return HEX_COLOR_REGEX.test(value.trim());
+}
+
+function validateLinearGradient(value: string): { valid: boolean; reason?: string } {
+  const gradient = value.trim();
+  const linearMatch = gradient.match(/^linear-gradient\((.*)\)$/i);
+  if (!linearMatch) {
+    return {
+      valid: false,
+      reason: "must use linear-gradient(...) syntax",
+    };
+  }
+
+  const parts = splitTopLevelComma(linearMatch[1]).filter(Boolean);
+  if (parts.length < 2) {
+    return {
+      valid: false,
+      reason: "must include at least two color stops",
+    };
+  }
+
+  const firstPart = parts[0];
+  const hasDirection = GRADIENT_DIRECTION_REGEX.test(firstPart) || TO_DIRECTION_REGEX.test(firstPart);
+  const stopParts = hasDirection ? parts.slice(1) : parts;
+
+  if (stopParts.length < 2) {
+    return {
+      valid: false,
+      reason: "must include at least two color stops",
+    };
+  }
+
+  let previousPercent = -Infinity;
+  for (const stop of stopParts) {
+    const matches = Array.from(stop.matchAll(PERCENT_TOKEN_REGEX));
+    if (matches.length === 0) {
+      return {
+        valid: false,
+        reason: `missing percentage in stop '${stop}'`,
+      };
+    }
+
+    const stopMatch = matches[matches.length - 1];
+    const stopIndex = stopMatch.index ?? -1;
+    const colorToken = stop.slice(0, stopIndex).trim();
+    if (!colorToken) {
+      return {
+        valid: false,
+        reason: `missing color in stop '${stop}'`,
+      };
+    }
+
+    const pct = Number(stopMatch[1]);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      return {
+        valid: false,
+        reason: `stop percentage '${stopMatch[1]}%' is out of range (0-100)`,
+      };
+    }
+
+    if (pct < previousPercent) {
+      return {
+        valid: false,
+        reason: "stop percentages must be non-decreasing",
+      };
+    }
+    previousPercent = pct;
+  }
+
+  return { valid: true };
 }
 
 function buildColorCatalog(colorsResponse: LedFxColorsResponse): LedFxColorCatalog {
@@ -189,12 +311,26 @@ function resolvePalettesInConfig(
   const errors: string[] = [];
   const nextConfig = { ...config };
 
-  if (typeof nextConfig.gradient === "string" && nextConfig.gradient.startsWith(PALETTE_PREFIX)) {
-    const resolved = resolvePaletteGradient(nextConfig.gradient, colorsResponse);
-    if (!resolved) {
-      errors.push(`Unknown gradient palette '${nextConfig.gradient}'.`);
+  if (typeof nextConfig.gradient === "string") {
+    let resolvedGradient = nextConfig.gradient;
+
+    if (nextConfig.gradient.startsWith(PALETTE_PREFIX)) {
+      const resolved = resolvePaletteGradient(nextConfig.gradient, colorsResponse);
+      if (!resolved) {
+        errors.push(`Unknown gradient palette '${nextConfig.gradient}'.`);
+      } else {
+        resolvedGradient = resolved;
+      }
+    }
+
+    const gradientValidation = validateLinearGradient(resolvedGradient);
+    if (!gradientValidation.valid) {
+      errors.push(
+        `Invalid gradient '${resolvedGradient}': ${gradientValidation.reason}. ` +
+          "Use linear-gradient(...) with percentage stops (e.g. 0%, 50%, 100%)."
+      );
     } else {
-      nextConfig.gradient = resolved;
+      nextConfig.gradient = resolvedGradient;
     }
   }
 
@@ -305,7 +441,7 @@ async function waitForEffectApplied(
       return true;
     }
     if (attempt < attempts - 1) {
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      await new Promise(resolve => globalThis.setTimeout(resolve, delayMs));
     }
   }
 
@@ -2132,8 +2268,33 @@ export async function handleToolCall(
       }
 
       case "ledfx_upsert_color_or_gradient": {
+        const value = typeof args.value === "string" ? args.value.trim() : "";
+
+        if (args.type === "color") {
+          if (!isValidLedFxColor(value)) {
+            return formatResponse({
+              error:
+                `Invalid color '${args.value}'. ` +
+                "Use hex format (#RRGGBB or #RRGGBBAA).",
+            });
+          }
+        } else if (args.type === "gradient") {
+          const gradientValidation = validateLinearGradient(value);
+          if (!gradientValidation.valid) {
+            return formatResponse({
+              error:
+                `Invalid gradient '${args.value}': ${gradientValidation.reason}. ` +
+                "Use linear-gradient(...) with percentage stops (e.g. 0%, 50%, 100%).",
+            });
+          }
+        } else {
+          return formatResponse({
+            error: `Unsupported type '${args.type}'. Use 'color' or 'gradient'.`,
+          });
+        }
+
         await client.upsertColors({
-          [args.id]: args.value,
+          [args.id]: value,
         });
         return formatResponse({
           success: true,
@@ -2171,8 +2332,36 @@ export async function handleToolCall(
       }
 
       case "ledfx_create_palette": {
+        if (!Array.isArray(args.colors) || args.colors.length === 0) {
+          return formatResponse({
+            error: "colors must be a non-empty array of hex strings.",
+          });
+        }
+
+        const colorsInput = args.colors as unknown[];
+        const invalidColors = colorsInput.filter(
+          color => typeof color !== "string" || !isValidLedFxColor(color)
+        );
+        if (invalidColors.length > 0) {
+          return formatResponse({
+            error:
+              `Invalid palette color(s): ${invalidColors.join(", ")}. ` +
+              "Use hex format (#RRGGBB or #RRGGBBAA).",
+          });
+        }
+
+        const colors = colorsInput.map(color => (color as string).trim());
         const paletteId = getPaletteId(args.name);
-        const gradient = buildPaletteGradient(args.colors as string[]);
+        const gradient = buildPaletteGradient(colors);
+        const gradientValidation = validateLinearGradient(gradient);
+        if (!gradientValidation.valid) {
+          return formatResponse({
+            error:
+              `Generated palette gradient is invalid: ${gradientValidation.reason}. ` +
+              "Use hex format colors that can be converted to valid percentage stops.",
+          });
+        }
+
         await client.upsertColors({
           [paletteId]: gradient,
         });

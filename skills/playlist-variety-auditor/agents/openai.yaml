@@ -1,0 +1,3 @@
+interface:
+  display_name: "Playlist Variety Auditor"
+  short_description: "Audit DJ playlists for diversity, pacing, and role balance"

@@ -60,6 +60,17 @@ Not allowed:
 - Do not run two strobe-family behaviors at once (for example, strobe-like foreground plus strobe mask).
 - In high-energy phases, prefer reactive mask + one melodic/reactive foreground.
 
+### Blender Archetypes (Recommended)
+
+Use these as reusable "recipes" across all phases:
+
+| Archetype | Background | Foreground | Mask | Feel |
+|---|---|---|---|---|
+| Wobble Bed | gradient/singleColor (chill) | `wavelength` or `energy` (wobble) | `singleColor` low/open | Musical sway, readable groove |
+| Flow Mist | `singleColor`/gradient low brightness | `energy2` or `wavelength` (flow) | gradient (soft structure) | Chill movement with shape |
+| Hard Cut Reactor | dark singleColor or contrast gradient | `blade_power_plus`/`power` (hard) | reactive `energy` or short strobe | Aggressive impact windows |
+| Bullet Tunnel | directional gradient | `scroll`/`scan` (bullet profile) | reactive mask (`energy` or strobe accent) | Rapid "lightning bullet" trajectories |
+
 ---
 
 ## Phase Overview
@@ -126,25 +137,41 @@ Not allowed:
 
 ---
 
+## Rapid Flow ("Lightning Bullet") Rules
+
+- Bullet scenes should feel directional and transient, not constant.
+- Preferred carriers: `scroll`, `scan`, fast `wavelength` variants.
+- Layering recommendation in blender:
+  - Foreground: bullet carrier.
+  - Background: low-contrast gradient (keeps depth).
+  - Mask: reactive gate (`energy`) or brief strobe accent.
+- Typical bullet scene duration: `9-12s`.
+- Avoid chaining more than two bullet scenes back-to-back in one phase playlist.
+
+---
+
 ## Playlist Architecture Rules
 
-- Maintain two variants per phase:
-  - **Normal:** rhythm/pitch-forward, low strobe usage.
-  - **Crazy:** impact-forward, higher contrast and controlled strobe accents.
-- Typical phase playlist length:
-  - Normal: 5 scenes.
-  - Crazy: 5-6 scenes.
-- Typical dwell time per scene: 24-40 seconds.
+- Build each phase playlist as a mixed arc (not single-effect runs):
+  - At least **3 different effect families** per phase playlist.
+  - At least **2 blender scenes** in each phase playlist.
+  - At least **1 bullet-flow scene** in each phase playlist.
+  - No more than **2 strobe-accent scenes** per phase playlist.
+- Typical phase playlist length: `8-12 scenes` (mixed direct + blender).
+- Typical dwell ranges:
+  - Standard scene: `12-22s`
+  - Bullet scene: `9-12s`
+  - Strobe accent: `6-8s`
 - Always include:
   - 1 entry scene (lower complexity).
-  - 1 peak scene (highest contrast).
+  - 1 high-contrast hard/peak scene.
   - 1 exit scene (prepares next phase).
 
 ### Suggested Scene Flow Pattern
 
-- `Entry -> Build -> Statement -> Peak Accent -> Release/Bridge`
+- `Entry -> Wobble/Flow -> Build -> Bullet -> Hard Peak -> Accent -> Exit`
 
-This pattern should hold for both normal and crazy variants, with crazy using stronger peak accents.
+This pattern should hold in all phases, with P3 biasing toward harder peak segments and P4 biasing toward flow/chill.
 
 ---
 
@@ -176,6 +203,9 @@ This pattern should hold for both normal and crazy variants, with crazy using st
 - No playlist contains repeated scene IDs or repeated scene names.
 - Strobe-heavy scenes are distributed, not clustered end-to-end.
 - Entry and exit scenes exist for each phase variant.
+- Every phase playlist includes at least one bullet-flow scene.
+- Every phase playlist includes both direct and blender scenes.
+- No phase playlist relies on only one effect family.
 
 ---
 
