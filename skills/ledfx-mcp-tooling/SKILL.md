@@ -13,6 +13,24 @@ description: Build or debug LedFX automations through MCP tools with schema-safe
 5. Write scenes after effect application checks pass.
 6. Build playlists from scene IDs and patch per-scene durations only when needed.
 
+## Effect Categories (from LedFX source)
+
+| Category | Audio-Reactive | Key Effects | Blender Use |
+|----------|---------------|-------------|-------------|
+| `BPM` | ✅ | `bar`, `multiBar`, `strobe` | mask, foreground |
+| `Classic` | ✅ | `energy`, `scroll`, `scroll_plus`, `wavelength`, `equalizer`, `bands`, `spectrum`, `filter`, `magnitude`, `scan`, `pitchSpectrum`, `rain`, `hierarchy` | mask, foreground |
+| `Atmospheric` | ✅ | `fire`, `lava_lamp`, `melt`, `water`, `crawler`, `energy2`, `melt_and_sparkle`, `marching`, `glitch` | foreground, background |
+| `Matrix` | ✅ (via Twod) | `plasma2d`, `plasmawled`, `concentric`, `equalizer2d`, `flame2d`, `waterfall2d`, `soap2d`, `bleep`, `radial` | foreground |
+| `Non-Reactive` | ❌ | `gradient`, `fade`, `singleColor`, `rainbow`, `random_flash` | **background only** |
+| `Diagnostic` | mixed | `vumeter`, `metro`, `pixels` | avoid in blenders |
+
+## Blender Mask Rules
+- **Mask MUST be audio-reactive.** `Non-Reactive` effects (gradient, fade, singleColor, rainbow, random_flash) as masks produce static, lifeless blenders.
+- Best 1D masks: `energy`, `scroll`, `scroll_plus`, `wavelength`, `equalizer`, `bar`, `spectrum`, `filter`, `hierarchy`, `vumeter`
+- Best beat-locked masks: `bar`, `strobe`, `real_strobe`
+- Avoid dual strobe: don't put strobe in both foreground AND mask
+- Use `ledfx_list_effect_types` with `filter_role: "mask"` to get valid mask candidates.
+
 ## Guardrails
 - Prefer `ledfx_set_blender` over direct blender config writes.
 - Keep gradients in `linear-gradient(... <pct>%, ...)` format.

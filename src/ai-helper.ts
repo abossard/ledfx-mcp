@@ -75,7 +75,18 @@ export const FEATURE_EXPLANATIONS: Record<string, string> = {
 };
 
 /**
- * Common effect types and their characteristics
+ * Common effect types and their characteristics.
+ * Derived from LedFX source CATEGORY values and AudioReactiveEffect base class analysis.
+ *
+ * Categories (from LedFX source):
+ *   "BPM"          - beat-locked, tempo-driven
+ *   "Classic"      - direct audio-reactive, frequency visualization
+ *   "Atmospheric"  - flowing, texture-based, audio-modulated
+ *   "Simple"       - minimal config, direct reactivity
+ *   "2D"           - 1D audio-reactive (misleading name in LedFX)
+ *   "Matrix"       - requires 2D virtual / matrix display (all AudioReactive via Twod)
+ *   "Non-Reactive" - no audio response (ambient / static)
+ *   "Diagnostic"   - dev/utility effects
  */
 export const EFFECT_TYPES: Record<string, {
   name: string;
@@ -83,62 +94,430 @@ export const EFFECT_TYPES: Record<string, {
   description: string;
   commonParams: string[];
   audioReactive: boolean;
+  hasGradient: boolean;
+  is2D: boolean;
+  blenderRoles: string[];
 }> = {
-  "rainbow": {
-    name: "Rainbow",
-    category: "classic",
-    description: "Displays a moving rainbow pattern across your LEDs",
-    commonParams: ["speed", "brightness", "mirror"],
-    audioReactive: false
+  // ── BPM ────────────────────────────────────────────────────────────────────
+  "bar": {
+    name: "Bar", category: "BPM",
+    description: "Beat-locked bar sweep across the strip",
+    commonParams: ["gradient", "beat_offset", "beat_skip", "mode"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["mask", "foreground"],
   },
-  "pulse": {
-    name: "Pulse",
-    category: "audio",
-    description: "Pulses to the beat of music with configurable colors",
-    commonParams: ["color", "speed", "sensitivity"],
-    audioReactive: true
-  },
-  "wavelength": {
-    name: "Wavelength",
-    category: "audio",
-    description: "Creates wave-like patterns that respond to different frequencies",
-    commonParams: ["color_lows", "color_mids", "color_high", "speed"],
-    audioReactive: true
-  },
-  "energy": {
-    name: "Energy",
-    category: "audio",
-    description: "Displays energy levels across the frequency spectrum",
-    commonParams: ["color", "sensitivity", "blur"],
-    audioReactive: true
-  },
-  "singleColor": {
-    name: "Single Color",
-    category: "static",
-    description: "Displays a solid color across all LEDs",
-    commonParams: ["color", "brightness"],
-    audioReactive: false
-  },
-  "gradient": {
-    name: "Gradient",
-    category: "classic",
-    description: "Displays a smooth color gradient",
-    commonParams: ["gradient", "speed", "direction"],
-    audioReactive: false
-  },
-  "scroll": {
-    name: "Scroll",
-    category: "classic",
-    description: "Scrolls a pattern across your LEDs",
-    commonParams: ["color", "speed", "direction"],
-    audioReactive: false
+  "multiBar": {
+    name: "Multicolor Bar", category: "BPM",
+    description: "Multiple colored bars sweeping on beat",
+    commonParams: ["gradient", "mode", "ease_method"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["mask", "foreground"],
   },
   "strobe": {
-    name: "Strobe",
-    category: "energy",
-    description: "Creates a strobe light effect",
-    commonParams: ["color", "frequency"],
-    audioReactive: false
+    name: "BPM Strobe", category: "BPM",
+    description: "Beat-locked strobe flash",
+    commonParams: ["gradient", "strobe_color", "strobe_width"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["mask"],
+  },
+  // ── Classic ────────────────────────────────────────────────────────────────
+  "bands": {
+    name: "Bands", category: "Classic",
+    description: "Per-band columns driven by melbank frequency analysis",
+    commonParams: ["gradient", "band_count", "align"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["mask", "foreground"],
+  },
+  "bands_matrix": {
+    name: "Bands Matrix", category: "Classic",
+    description: "Melbank frequency bands displayed on a 2D matrix",
+    commonParams: ["gradient", "band_count"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["foreground"],
+  },
+  "blade_power_plus": {
+    name: "Blade Power+", category: "Classic",
+    description: "Sharp frequency spike effect",
+    commonParams: ["frequency_range", "multiplier", "decay"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["foreground", "mask"],
+  },
+  "energy": {
+    name: "Energy", category: "Classic",
+    description: "Three-band color zone reactivity (lows/mids/highs). Best all-round mask.",
+    commonParams: ["color_lows", "color_mids", "color_high", "sensitivity", "mixing_mode"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["mask", "foreground"],
+  },
+  "equalizer": {
+    name: "Equalizer", category: "Classic",
+    description: "Full-spectrum EQ bar graph",
+    commonParams: ["gradient", "align", "gradient_repeat"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["mask", "foreground"],
+  },
+  "filter": {
+    name: "Filter", category: "Classic",
+    description: "Frequency-filtered color roll",
+    commonParams: ["frequency_range", "roll_speed", "boost", "gradient"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["mask", "foreground"],
+  },
+  "magnitude": {
+    name: "Magnitude", category: "Classic",
+    description: "Single frequency band power meter",
+    commonParams: ["frequency_range", "gradient"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["mask"],
+  },
+  "pitchSpectrum": {
+    name: "Pitch Spectrum", category: "Classic",
+    description: "MIDI pitch-mapped spectrum visualizer",
+    commonParams: ["gradient", "responsiveness", "fade_rate"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["mask", "foreground"],
+  },
+  "power": {
+    name: "Power", category: "Classic",
+    description: "Bass-driven sparks and glow",
+    commonParams: ["gradient", "bass_decay_rate", "sparks_color", "sparks_decay_rate"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["foreground"],
+  },
+  "rain": {
+    name: "Rain", category: "Classic",
+    description: "Audio droplets per frequency band",
+    commonParams: ["lows_color", "mids_color", "high_color", "lows_sensitivity"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["foreground", "mask"],
+  },
+  "real_strobe": {
+    name: "Strobe", category: "Classic",
+    description: "Audio-triggered strobe, softer than BPM strobe",
+    commonParams: ["gradient", "strobe_color", "strobe_rate", "strobe_decay_rate"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["mask"],
+  },
+  "scan": {
+    name: "Scan", category: "Classic",
+    description: "Frequency-driven scanner beam",
+    commonParams: ["frequency_range", "gradient", "bounce", "speed"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["foreground", "mask"],
+  },
+  "scan_and_flare": {
+    name: "Scan and Flare", category: "Classic",
+    description: "Scanner with burst flare on beat",
+    commonParams: ["frequency_range", "gradient"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["foreground"],
+  },
+  "scan_multi": {
+    name: "Scan Multi", category: "Classic",
+    description: "Multiple simultaneous scanner beams",
+    commonParams: ["gradient", "speed"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["foreground"],
+  },
+  "scroll": {
+    name: "Scroll", category: "Classic",
+    description: "3-band color scroll. Classic and reliable mask.",
+    commonParams: ["color_lows", "color_mids", "color_high", "speed", "decay", "threshold"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["mask", "foreground"],
+  },
+  "scroll_plus": {
+    name: "Scroll+", category: "Classic",
+    description: "Improved scroll with per-second speed control",
+    commonParams: ["color_lows", "color_mids", "color_high", "scroll_per_sec", "decay_per_sec"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["mask", "foreground"],
+  },
+  "spectrum": {
+    name: "Spectrum", category: "Classic",
+    description: "Full-spectrum RGB mix, no config needed",
+    commonParams: ["rgb_mix"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["mask"],
+  },
+  "wavelength": {
+    name: "Wavelength", category: "Classic",
+    description: "Melbank mapped to gradient. Simple and effective mask.",
+    commonParams: ["gradient", "blur"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["mask", "foreground"],
+  },
+  // ── Atmospheric ────────────────────────────────────────────────────────────
+  "block_reflections": {
+    name: "Block Reflections", category: "Atmospheric",
+    description: "Slow audio-textured reflecting blocks",
+    commonParams: ["reactivity", "speed"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["background", "foreground"],
+  },
+  "crawler": {
+    name: "Crawler", category: "Atmospheric",
+    description: "Audio-reactive crawler motion",
+    commonParams: ["reactivity", "speed", "chop", "sway"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["foreground"],
+  },
+  "energy2": {
+    name: "Energy 2", category: "Atmospheric",
+    description: "Smoother energy bands, good primary visual",
+    commonParams: ["reactivity", "speed"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["foreground"],
+  },
+  "fire": {
+    name: "Fire", category: "Atmospheric",
+    description: "Ambient flame; not strongly reactive but visually rich",
+    commonParams: ["speed", "intensity", "fade_chance", "gradient"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["background", "foreground"],
+  },
+  "glitch": {
+    name: "Glitch", category: "Atmospheric",
+    description: "Audio-reactive color glitch effect",
+    commonParams: ["reactivity", "speed", "saturation_threshold"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["foreground", "mask"],
+  },
+  "lava_lamp": {
+    name: "Lava lamp", category: "Atmospheric",
+    description: "Bubbly lava motion, audio-modulated",
+    commonParams: ["reactivity", "speed", "contrast"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["background", "foreground"],
+  },
+  "marching": {
+    name: "Marching", category: "Atmospheric",
+    description: "Marching gradient pulses",
+    commonParams: ["reactivity", "speed"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["foreground"],
+  },
+  "melt": {
+    name: "Melt", category: "Atmospheric",
+    description: "Melting color effect, pairs well with reactive mask",
+    commonParams: ["reactivity", "speed"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["foreground"],
+  },
+  "melt_and_sparkle": {
+    name: "Melt and Sparkle", category: "Atmospheric",
+    description: "Melt with audio-driven sparkle bursts",
+    commonParams: ["reactivity", "speed", "strobe_threshold", "strobe_blur"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["foreground"],
+  },
+  "water": {
+    name: "Water", category: "Atmospheric",
+    description: "Ripple droplets per frequency band (bass/mids/highs)",
+    commonParams: ["bass_size", "mids_size", "high_size", "viscosity"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["foreground"],
+  },
+  // ── Simple ─────────────────────────────────────────────────────────────────
+  "hierarchy": {
+    name: "Hierarchy", category: "Simple",
+    description: "Layered frequency color zones; very clean mask",
+    commonParams: ["color_lows", "color_mids", "color_high", "threshold_lows", "threshold_mids"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["mask", "foreground"],
+  },
+  // ── Matrix (2D, all AudioReactive via Twod base) ───────────────────────────
+  "bleep": {
+    name: "Bleep", category: "Matrix",
+    description: "Rolling spectrogram display (frequency_range driven)",
+    commonParams: ["frequency_range", "gradient", "scroll_time"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["foreground"],
+  },
+  "concentric": {
+    name: "Concentric", category: "Matrix",
+    description: "Beat-expanding concentric rings",
+    commonParams: ["frequency_range", "gradient", "idle_speed"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["foreground"],
+  },
+  "digitalrain2d": {
+    name: "Digital Rain", category: "Matrix",
+    description: "Matrix rain; audio modulates intensity via impulse_decay",
+    commonParams: ["gradient", "count", "tail", "impulse_decay"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["foreground", "background"],
+  },
+  "equalizer2d": {
+    name: "Equalizer2d", category: "Matrix",
+    description: "Full EQ bar graph on 2D matrix",
+    commonParams: ["gradient", "bands", "frequency_range"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["foreground"],
+  },
+  "flame2d": {
+    name: "Flame", category: "Matrix",
+    description: "2D flame; height driven by bass/mid/high energy",
+    commonParams: ["low_band", "mid_band", "high_band", "intensity", "velocity"],
+    audioReactive: true, hasGradient: false, is2D: true,
+    blenderRoles: ["foreground", "background"],
+  },
+  "game_of_life": {
+    name: "Game of Life", category: "Matrix",
+    description: "Conway's Game of Life with beat-injected cells",
+    commonParams: ["base_game_speed", "beat_inject", "frequency_range"],
+    audioReactive: true, hasGradient: false, is2D: true,
+    blenderRoles: ["foreground"],
+  },
+  "gifplayer": {
+    name: "GIF Player", category: "Matrix",
+    description: "Plays an animated GIF. No audio reactivity.",
+    commonParams: ["image_location", "gif_fps", "bounce"],
+    audioReactive: false, hasGradient: false, is2D: true,
+    blenderRoles: ["background", "foreground"],
+  },
+  "imagespin": {
+    name: "Image", category: "Matrix",
+    description: "Image that spins; frequency controls rotation speed",
+    commonParams: ["frequency_range", "multiplier", "spin", "image_source"],
+    audioReactive: true, hasGradient: false, is2D: true,
+    blenderRoles: ["foreground"],
+  },
+  "keybeat2d": {
+    name: "Keybeat2d", category: "Matrix",
+    description: "Beat-timed image/animation playback",
+    commonParams: ["beat_frames", "image_location", "ping_pong"],
+    audioReactive: true, hasGradient: false, is2D: true,
+    blenderRoles: ["foreground"],
+  },
+  "noise2d": {
+    name: "Noise", category: "Matrix",
+    description: "Perlin noise; audio modulates via impulse_decay",
+    commonParams: ["gradient", "speed", "intensity", "zoom", "impulse_decay"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["background", "foreground"],
+  },
+  "plasma2d": {
+    name: "Plasma2d", category: "Matrix",
+    description: "Plasma animated by frequency range",
+    commonParams: ["frequency_range", "gradient", "density", "twist"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["foreground", "background"],
+  },
+  "plasmawled": {
+    name: "PlasmaWled2d", category: "Matrix",
+    description: "WLED-style plasma with audio frequency modulation",
+    commonParams: ["frequency_range", "gradient", "speed", "size_multiplication"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["foreground", "background"],
+  },
+  "radial": {
+    name: "Radial", category: "Matrix",
+    description: "Radial frequency visualizer (polygon/star shapes)",
+    commonParams: ["frequency_range", "polygon", "star", "rotation"],
+    audioReactive: true, hasGradient: false, is2D: true,
+    blenderRoles: ["foreground"],
+  },
+  "soap2d": {
+    name: "Soap", category: "Matrix",
+    description: "Soap bubble simulation driven by frequency",
+    commonParams: ["frequency_range", "gradient", "speed"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["foreground"],
+  },
+  "texter2d": {
+    name: "Texter", category: "Matrix",
+    description: "Scrolling text; audio modulates via impulse_decay",
+    commonParams: ["text", "gradient", "text_effect", "speed_option_1"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["foreground"],
+  },
+  "waterfall2d": {
+    name: "Waterfall", category: "Matrix",
+    description: "Classic audio waterfall spectrogram",
+    commonParams: ["gradient", "drop_secs", "bands", "fade_out"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["foreground"],
+  },
+  "clone": {
+    name: "Clone", category: "Matrix",
+    description: "Clones pixels from another virtual. No audio reactivity.",
+    commonParams: ["screen", "width", "height"],
+    audioReactive: false, hasGradient: false, is2D: true,
+    blenderRoles: ["background", "foreground"],
+  },
+  // ── Non-Reactive ───────────────────────────────────────────────────────────
+  "fade": {
+    name: "Fade", category: "Non-Reactive",
+    description: "Slow color cycling through a gradient. Ideal background.",
+    commonParams: ["gradient", "speed"],
+    audioReactive: false, hasGradient: true, is2D: false,
+    blenderRoles: ["background"],
+  },
+  "gradient": {
+    name: "Gradient", category: "Non-Reactive",
+    description: "Scrolling color gradient. Best background effect.",
+    commonParams: ["gradient", "gradient_roll", "speed"],
+    audioReactive: false, hasGradient: true, is2D: false,
+    blenderRoles: ["background"],
+  },
+  "rainbow": {
+    name: "Rainbow", category: "Non-Reactive",
+    description: "Classic rolling rainbow. Background use only.",
+    commonParams: ["speed", "frequency", "brightness"],
+    audioReactive: false, hasGradient: false, is2D: false,
+    blenderRoles: ["background"],
+  },
+  "random_flash": {
+    name: "Random Flash", category: "Non-Reactive",
+    description: "Random sparkle/lightning flashes at configurable rate",
+    commonParams: ["speed", "hit_probability_per_sec", "hit_color", "hit_duration"],
+    audioReactive: false, hasGradient: false, is2D: false,
+    blenderRoles: ["background", "foreground"],
+  },
+  "singleColor": {
+    name: "Single Color", category: "Non-Reactive",
+    description: "Solid color across all LEDs. Pure background base.",
+    commonParams: ["color", "brightness"],
+    audioReactive: false, hasGradient: false, is2D: false,
+    blenderRoles: ["background"],
+  },
+  // ── Diagnostic ─────────────────────────────────────────────────────────────
+  "metro": {
+    name: "Metro", category: "Diagnostic",
+    description: "Metronome pulse display (dev/diagnostic tool)",
+    commonParams: ["pulse_period", "flash_color"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: [],
+  },
+  "vumeter": {
+    name: "VuMeter", category: "Diagnostic",
+    description: "Volume meter; can serve as subtle mask",
+    commonParams: ["peak_decay", "color_min", "color_max", "color_peak"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: ["mask"],
+  },
+  "pixels": {
+    name: "Pixels", category: "Diagnostic",
+    description: "Random pixel sparkle (non-reactive)",
+    commonParams: ["speed", "pixel_color", "pixels"],
+    audioReactive: false, hasGradient: false, is2D: false,
+    blenderRoles: ["background"],
+  },
+  "number": {
+    name: "Number", category: "Diagnostic",
+    description: "Numeric overlay display (diagnostic)",
+    commonParams: ["value_source", "gradient"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: [],
+  },
+  // ── Special ────────────────────────────────────────────────────────────────
+  "blender": {
+    name: "Blender", category: "Matrix",
+    description: "Meta-effect: combines background + foreground using a mask. Do not nest.",
+    commonParams: ["background", "foreground", "mask", "invert_mask", "mask_cutoff"],
+    audioReactive: true, hasGradient: false, is2D: false,
+    blenderRoles: [],
   },
 };
 
@@ -379,4 +758,48 @@ export function getEffectCategories(): Record<string, string[]> {
   }
   
   return categories;
+}
+
+/**
+ * Get effects suitable for a specific blender role.
+ * Calculation: filters EFFECT_TYPES by blenderRoles membership.
+ */
+export function getEffectsForBlenderRole(role: "background" | "foreground" | "mask"): Array<{
+  id: string;
+  name: string;
+  category: string;
+  audioReactive: boolean;
+  hasGradient: boolean;
+  is2D: boolean;
+}> {
+  return Object.entries(EFFECT_TYPES)
+    .filter(([, info]) => info.blenderRoles.includes(role))
+    .map(([id, info]) => ({
+      id,
+      name: info.name,
+      category: info.category,
+      audioReactive: info.audioReactive,
+      hasGradient: info.hasGradient,
+      is2D: info.is2D,
+    }));
+}
+
+/**
+ * Get audio-reactive effects only.
+ * Calculation: filters EFFECT_TYPES by audioReactive flag.
+ */
+export function getAudioReactiveEffects(): string[] {
+  return Object.entries(EFFECT_TYPES)
+    .filter(([, info]) => info.audioReactive)
+    .map(([id]) => id);
+}
+
+/**
+ * Get non-reactive effects (safe for blender background only).
+ * Calculation: filters EFFECT_TYPES by !audioReactive.
+ */
+export function getNonReactiveEffects(): string[] {
+  return Object.entries(EFFECT_TYPES)
+    .filter(([, info]) => !info.audioReactive)
+    .map(([id]) => id);
 }

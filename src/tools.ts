@@ -25,7 +25,7 @@ import {
   LedFxVirtual,
   RestoreOptions,
 } from "./ledfx-client.js";
-import { parseSceneDescription, recommendEffects, explainFeature, getFeatureCategories, LedFxColorCatalog } from "./ai-helper.js";
+import { parseSceneDescription, recommendEffects, explainFeature, getFeatureCategories, getEffectsForBlenderRole, getNonReactiveEffects, EFFECT_TYPES, LedFxColorCatalog } from "./ai-helper.js";
 import logger from "./logger.js";
 import * as fs from "fs";
 import * as path from "path";
@@ -1320,10 +1320,20 @@ export const tools: Tool[] = [
   },
   {
     name: "ledfx_list_effect_types",
-    description: "List all available effect types with descriptions",
+    description: "List all available effect types with descriptions, audio-reactivity, gradient support, 2D flag, and blender role recommendations. Use this to choose effects for blenders.",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        filter_role: {
+          type: "string",
+          enum: ["background", "foreground", "mask", "all"],
+          description: "Filter by blender role. Use 'mask' to see only audio-reactive effects suitable as blender masks.",
+        },
+        audio_reactive_only: {
+          type: "boolean",
+          description: "If true, return only audio-reactive effects.",
+        },
+      },
       required: [],
     },
   },
@@ -2416,19 +2426,43 @@ export async function handleToolCall(
       }
 
       case "ledfx_list_effect_types": {
-        // Dynamically fetch all effect types from LedFX API
-        const effectSchemas = await client.getEffectSchemas();
-        const effectTypes = Object.entries(effectSchemas).map(([id, data]: [string, any]) => ({
+        const filterRole = args.filter_role as string | undefined;
+        const audioOnly = args.audio_reactive_only as boolean | undefined;
+
+        // Build the catalog from our static knowledge (no live API needed)
+        let effects = Object.entries(EFFECT_TYPES).map(([id, info]) => ({
           id,
-          name: data.name || id,
-          category: data.category || "Unknown",
-          description: data.schema?.properties?.gradient?.description || "",
+          name: info.name,
+          category: info.category,
+          description: info.description,
+          audioReactive: info.audioReactive,
+          hasGradient: info.hasGradient,
+          is2D: info.is2D,
+          blenderRoles: info.blenderRoles,
+          commonParams: info.commonParams,
         }));
-        // Sort by category then name
-        effectTypes.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+
+        if (filterRole && filterRole !== "all") {
+          effects = effects.filter((e) => e.blenderRoles.includes(filterRole));
+        }
+        if (audioOnly) {
+          effects = effects.filter((e) => e.audioReactive);
+        }
+
+        effects.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+
         return formatResponse({
-          count: effectTypes.length,
-          effects: effectTypes,
+          count: effects.length,
+          effects,
+          blender_guidance: {
+            mask_must_be_audio_reactive: true,
+            never_use_as_mask: getNonReactiveEffects(),
+            best_masks: getEffectsForBlenderRole("mask")
+              .filter((e) => e.audioReactive)
+              .map((e) => e.id),
+            best_backgrounds: getEffectsForBlenderRole("background").map((e) => e.id),
+            best_foregrounds: getEffectsForBlenderRole("foreground").map((e) => e.id),
+          },
         });
       }
 

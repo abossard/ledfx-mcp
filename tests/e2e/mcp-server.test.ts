@@ -136,9 +136,22 @@ describe('End-to-End MCP Server Tests', () => {
 
   describe('Playlist Management Tools', () => {
     test('ledfx_create_playlist should create a playlist', async () => {
+      if (skipLedFx) {
+        console.log('Skipped - LedFX not running');
+        return;
+      }
+      // Fetch real scene IDs from the running LedFX instance
+      const scenesResult = await handleToolCall('ledfx_list_scenes', {});
+      const scenesData = JSON.parse(scenesResult.content[0].text);
+      const sceneIds = Object.keys(scenesData.scenes ?? {}).slice(0, 2);
+      if (sceneIds.length < 1) {
+        console.log('Skipped - no scenes available on LedFX');
+        return;
+      }
+
       const result = await handleToolCall('ledfx_create_playlist', {
         name: `Test Playlist ${Date.now()}`,
-        scene_ids: ['scene1', 'scene2'],
+        scene_ids: sceneIds,
         transition_time: 10,
         loop: true,
         description: 'E2E test playlist',

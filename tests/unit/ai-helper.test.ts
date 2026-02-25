@@ -159,7 +159,7 @@ describe('AI Helper', () => {
   describe('EFFECT_TYPES', () => {
     test('should have common effect types', () => {
       expect(EFFECT_TYPES['rainbow']).toBeDefined();
-      expect(EFFECT_TYPES['pulse']).toBeDefined();
+      expect(EFFECT_TYPES['energy']).toBeDefined();
       expect(EFFECT_TYPES['wavelength']).toBeDefined();
     });
 
@@ -175,7 +175,7 @@ describe('AI Helper', () => {
     });
 
     test('should mark audio-reactive effects correctly', () => {
-      expect(EFFECT_TYPES['pulse'].audioReactive).toBe(true);
+      expect(EFFECT_TYPES['energy'].audioReactive).toBe(true);
       expect(EFFECT_TYPES['wavelength'].audioReactive).toBe(true);
       expect(EFFECT_TYPES['rainbow'].audioReactive).toBe(false);
     });
