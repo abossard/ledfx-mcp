@@ -576,6 +576,9 @@ export const tools: Tool[] = [
           description: "Effect configuration (speed, color, brightness, etc.)",
           additionalProperties: true,
         },
+        fallback: {
+          description: "Fallback behavior: true (auto-revert after 300s), false/null (permanent), or number of seconds",
+        },
       },
       required: ["virtual_id", "effect_type"],
     },
@@ -1434,6 +1437,297 @@ export const tools: Tool[] = [
       required: ["backup"],
     },
   },
+  // ── Phase 2: Scene & Global Effect Tools ──────────────────────────────────
+  {
+    name: "ledfx_deactivate_scene",
+    description: "Deactivate a scene without clearing all effects. Reverses scene activation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scene_id: { type: "string", description: "ID of the scene to deactivate" },
+      },
+      required: ["scene_id"],
+    },
+  },
+  {
+    name: "ledfx_rename_scene",
+    description: "Rename an existing scene",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scene_id: { type: "string", description: "ID of the scene to rename" },
+        name: { type: "string", description: "New name for the scene" },
+      },
+      required: ["scene_id", "name"],
+    },
+  },
+  {
+    name: "ledfx_clear_all_effects",
+    description: "Clear all active effects on all virtuals. Clean slate for authoring.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "ledfx_apply_global",
+    description: "Apply global config (gradient, brightness, background_color, flip, mirror) to all active effects. Optionally filter by virtual IDs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        gradient: { type: "string", description: "Gradient name or CSS linear-gradient string" },
+        brightness: { type: "number", description: "Brightness 0.0-1.0" },
+        background_color: { type: "string", description: "Background color hex string" },
+        background_brightness: { type: "number", description: "Background brightness 0.0-1.0" },
+        flip: { description: "Flip direction: true, false, or 'toggle'" },
+        mirror: { description: "Mirror mode: true, false, or 'toggle'" },
+        virtuals: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional list of virtual IDs to apply to (default: all)",
+        },
+      },
+    },
+  },
+  {
+    name: "ledfx_apply_global_effect",
+    description: "Apply a specific effect type and config to multiple virtuals at once. Bulk effect application.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        effect_type: { type: "string", description: "Effect type to apply" },
+        effect_config: { type: "object", description: "Effect configuration" },
+        virtuals: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional list of virtual IDs (default: all)",
+        },
+        fallback: { description: "Fallback: true (300s), false/null (none), or seconds as number" },
+      },
+      required: ["effect_type"],
+    },
+  },
+  // ── Phase 3: Config Management ────────────────────────────────────────────
+  {
+    name: "ledfx_get_config",
+    description: "Get full LedFX configuration JSON. Optionally filter to specific sections (audio, melbanks, wled_preferences, etc.).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        keys: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional config sections to retrieve. Omit for full config.",
+        },
+      },
+    },
+  },
+  {
+    name: "ledfx_update_config",
+    description: "Update specific LedFX config sections. May trigger restart for core settings.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        config: { type: "object", description: "Config sections to update (e.g. {audio: {...}, melbanks: {...}})" },
+      },
+      required: ["config"],
+    },
+  },
+  {
+    name: "ledfx_import_config",
+    description: "Import a complete LedFX configuration (with version migration). Creates backup first. Triggers restart.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        config: { type: "object", description: "Complete LedFX config object including configuration_version" },
+      },
+      required: ["config"],
+    },
+  },
+  {
+    name: "ledfx_reset_config",
+    description: "Reset LedFX configuration to defaults. Creates backup first. Triggers restart.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  // ── Phase 4: Virtual & Effect Management ──────────────────────────────────
+  {
+    name: "ledfx_delete_virtual",
+    description: "Delete a virtual and its associated device. Removes references from all scenes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        virtual_id: { type: "string", description: "ID of the virtual to delete" },
+      },
+      required: ["virtual_id"],
+    },
+  },
+  {
+    name: "ledfx_update_virtual_segments",
+    description: "Update the LED segment mapping of a virtual",
+    inputSchema: {
+      type: "object",
+      properties: {
+        virtual_id: { type: "string", description: "ID of the virtual" },
+        segments: { type: "array", description: "Array of segment definitions" },
+      },
+      required: ["virtual_id", "segments"],
+    },
+  },
+  {
+    name: "ledfx_toggle_pause_all",
+    description: "Toggle global pause on all virtuals. Returns new paused state.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "ledfx_delete_effect_history",
+    description: "Delete a specific effect type from a virtual's effect history. Clears the effect if currently active.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        virtual_id: { type: "string", description: "ID of the virtual" },
+        effect_type: { type: "string", description: "Effect type to remove from history" },
+      },
+      required: ["virtual_id", "effect_type"],
+    },
+  },
+  {
+    name: "ledfx_trigger_fallback",
+    description: "Trigger the fallback mechanism on a virtual, reverting it to its default/previous effect",
+    inputSchema: {
+      type: "object",
+      properties: {
+        virtual_id: { type: "string", description: "ID of the virtual" },
+      },
+      required: ["virtual_id"],
+    },
+  },
+  {
+    name: "ledfx_power",
+    description: "Shutdown or restart LedFX",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["shutdown", "restart"], description: "Power action" },
+        timeout: { type: "number", description: "Delay in seconds before action (default: 0)" },
+      },
+      required: ["action"],
+    },
+  },
+  // ── Phase 5: QLC+ Integration ─────────────────────────────────────────────
+  {
+    name: "ledfx_list_integrations",
+    description: "List all integration instances (QLC+, Spotify, etc.) with their status and config",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "ledfx_create_integration",
+    description: "Create a new integration instance (e.g. QLC+ DMX bridge)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: { type: "string", description: "Integration type (e.g. 'qlc')" },
+        config: {
+          type: "object",
+          description: "Integration config. For QLC+: {name, description, ip_address, port}",
+          properties: {
+            name: { type: "string" },
+            description: { type: "string" },
+            ip_address: { type: "string" },
+            port: { type: "number" },
+          },
+        },
+      },
+      required: ["type", "config"],
+    },
+  },
+  {
+    name: "ledfx_toggle_integration",
+    description: "Activate or deactivate an integration by ID",
+    inputSchema: {
+      type: "object",
+      properties: {
+        integration_id: { type: "string", description: "Integration ID to toggle" },
+      },
+      required: ["integration_id"],
+    },
+  },
+  {
+    name: "ledfx_delete_integration",
+    description: "Delete an integration and all its configuration",
+    inputSchema: {
+      type: "object",
+      properties: {
+        integration_id: { type: "string", description: "Integration ID to delete" },
+      },
+      required: ["integration_id"],
+    },
+  },
+  {
+    name: "ledfx_get_qlc_info",
+    description: "Get QLC+ integration details: available widgets, event types (Effect Set, Effect Cleared, Scene Activated), and configured event listeners",
+    inputSchema: {
+      type: "object",
+      properties: {
+        integration_id: { type: "string", description: "QLC+ integration ID" },
+      },
+      required: ["integration_id"],
+    },
+  },
+  {
+    name: "ledfx_create_qlc_event",
+    description: "Map a LedFX event to a QLC+ widget payload. When the event fires, the payload is sent to QLC+ via WebSocket.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        integration_id: { type: "string", description: "QLC+ integration ID" },
+        event_type: { type: "string", description: "LedFX event type (e.g. 'effect_set', 'effect_cleared', 'scene_activated')" },
+        event_filter: {
+          type: "object",
+          description: "Event filter (e.g. {effect_name: 'Scroll'} or {scene_id: 'my-scene'})",
+        },
+        qlc_payload: {
+          type: "object",
+          description: "QLC+ payload as {widget_id: value} pairs to send when event triggers",
+        },
+      },
+      required: ["integration_id", "event_type", "event_filter", "qlc_payload"],
+    },
+  },
+  {
+    name: "ledfx_toggle_qlc_event",
+    description: "Enable or disable a QLC+ event mapping without deleting it",
+    inputSchema: {
+      type: "object",
+      properties: {
+        integration_id: { type: "string", description: "QLC+ integration ID" },
+        event_type: { type: "string", description: "Event type" },
+        event_filter: { type: "object", description: "Event filter to identify the mapping" },
+      },
+      required: ["integration_id", "event_type", "event_filter"],
+    },
+  },
+  {
+    name: "ledfx_delete_qlc_event",
+    description: "Delete a QLC+ event mapping permanently",
+    inputSchema: {
+      type: "object",
+      properties: {
+        integration_id: { type: "string", description: "QLC+ integration ID" },
+        event_type: { type: "string", description: "Event type" },
+        event_filter: { type: "object", description: "Event filter to identify the mapping" },
+      },
+      required: ["integration_id", "event_type", "event_filter"],
+    },
+  },
 ];
 
 /**
@@ -1614,7 +1908,7 @@ export async function handleToolCall(
           return formatResponse({ error: resolved.errors.join(" ") });
         }
 
-        await client.setVirtualEffect(args.virtual_id, args.effect_type, resolved.config);
+        await client.setVirtualEffect(args.virtual_id, args.effect_type, resolved.config, args.fallback as boolean | number | null | undefined);
         const applied = await waitForEffectApplied(
           client,
           args.virtual_id,
@@ -2569,6 +2863,155 @@ export async function handleToolCall(
             description: backup.metadata?.description,
           } : undefined,
         });
+      }
+
+      // ── Phase 2: Scene & Global Effect Handlers ────────────────────────────
+
+      case "ledfx_deactivate_scene": {
+        await client.deactivateScene(args.scene_id as string);
+        return formatResponse({ status: "success", scene_id: args.scene_id, action: "deactivated" });
+      }
+
+      case "ledfx_rename_scene": {
+        await client.renameScene(args.scene_id as string, args.name as string);
+        return formatResponse({ status: "success", scene_id: args.scene_id, new_name: args.name });
+      }
+
+      case "ledfx_clear_all_effects": {
+        await client.clearAllEffects();
+        return formatResponse({ status: "success", message: "All effects cleared on all virtuals" });
+      }
+
+      case "ledfx_apply_global": {
+        const globalConfig: Record<string, unknown> = {};
+        for (const key of ["gradient", "brightness", "background_color", "background_brightness", "flip", "mirror"]) {
+          if (args[key] !== undefined) {
+            globalConfig[key] = args[key];
+          }
+        }
+        const virtuals = args.virtuals as string[] | undefined;
+        const message = await client.applyGlobal(globalConfig, virtuals);
+        return formatResponse({ status: "success", message });
+      }
+
+      case "ledfx_apply_global_effect": {
+        const message = await client.applyGlobalEffect(
+          args.effect_type as string,
+          (args.effect_config as Record<string, unknown>) || {},
+          args.virtuals as string[] | undefined,
+          args.fallback as boolean | number | null | undefined
+        );
+        return formatResponse({ status: "success", message });
+      }
+
+      // ── Phase 3: Config Management Handlers ────────────────────────────────
+
+      case "ledfx_get_config": {
+        const config = await client.getConfig(args.keys as string[] | undefined);
+        return formatResponse(config);
+      }
+
+      case "ledfx_update_config": {
+        await client.updateConfig(args.config as Record<string, unknown>);
+        return formatResponse({ status: "success", message: "Configuration updated" });
+      }
+
+      case "ledfx_import_config": {
+        await client.importConfig(args.config as Record<string, unknown>);
+        return formatResponse({ status: "success", message: "Configuration imported. LedFX is restarting." });
+      }
+
+      case "ledfx_reset_config": {
+        await client.resetConfig();
+        return formatResponse({ status: "success", message: "Configuration reset to defaults. LedFX is restarting." });
+      }
+
+      // ── Phase 4: Virtual & Effect Management Handlers ──────────────────────
+
+      case "ledfx_delete_virtual": {
+        await client.deleteVirtual(args.virtual_id as string);
+        return formatResponse({ status: "success", virtual_id: args.virtual_id, action: "deleted" });
+      }
+
+      case "ledfx_update_virtual_segments": {
+        await client.updateVirtualSegments(args.virtual_id as string, args.segments as unknown[]);
+        return formatResponse({ status: "success", virtual_id: args.virtual_id, message: "Segments updated" });
+      }
+
+      case "ledfx_toggle_pause_all": {
+        const paused = await client.togglePauseAll();
+        return formatResponse({ status: "success", paused });
+      }
+
+      case "ledfx_delete_effect_history": {
+        await client.deleteEffectHistory(args.virtual_id as string, args.effect_type as string);
+        return formatResponse({ status: "success", virtual_id: args.virtual_id, effect_type: args.effect_type, action: "deleted_from_history" });
+      }
+
+      case "ledfx_trigger_fallback": {
+        await client.triggerFallback(args.virtual_id as string);
+        return formatResponse({ status: "success", virtual_id: args.virtual_id, action: "fallback_triggered" });
+      }
+
+      case "ledfx_power": {
+        const timeout = (args.timeout as number) || 0;
+        await client.power(args.action as "shutdown" | "restart", timeout);
+        return formatResponse({ status: "success", action: args.action, timeout });
+      }
+
+      // ── Phase 5: QLC+ Integration Handlers ─────────────────────────────────
+
+      case "ledfx_list_integrations": {
+        const integrations = await client.getIntegrations();
+        return formatResponse(integrations);
+      }
+
+      case "ledfx_create_integration": {
+        await client.createIntegration(args.type as string, args.config as Record<string, unknown>);
+        return formatResponse({ status: "success", type: args.type, message: "Integration created" });
+      }
+
+      case "ledfx_toggle_integration": {
+        await client.toggleIntegration(args.integration_id as string);
+        return formatResponse({ status: "success", integration_id: args.integration_id, action: "toggled" });
+      }
+
+      case "ledfx_delete_integration": {
+        await client.deleteIntegration(args.integration_id as string);
+        return formatResponse({ status: "success", integration_id: args.integration_id, action: "deleted" });
+      }
+
+      case "ledfx_get_qlc_info": {
+        const qlcInfo = await client.getQlcInfo(args.integration_id as string);
+        return formatResponse(qlcInfo);
+      }
+
+      case "ledfx_create_qlc_event": {
+        await client.createQlcEvent(
+          args.integration_id as string,
+          args.event_type as string,
+          args.event_filter as Record<string, string>,
+          args.qlc_payload as Record<string, unknown>
+        );
+        return formatResponse({ status: "success", message: "QLC+ event mapping created" });
+      }
+
+      case "ledfx_toggle_qlc_event": {
+        await client.toggleQlcEvent(
+          args.integration_id as string,
+          args.event_type as string,
+          args.event_filter as Record<string, string>
+        );
+        return formatResponse({ status: "success", message: "QLC+ event mapping toggled" });
+      }
+
+      case "ledfx_delete_qlc_event": {
+        await client.deleteQlcEvent(
+          args.integration_id as string,
+          args.event_type as string,
+          args.event_filter as Record<string, string>
+        );
+        return formatResponse({ status: "success", message: "QLC+ event mapping deleted" });
       }
 
       default:

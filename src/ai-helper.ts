@@ -456,8 +456,8 @@ export const EFFECT_TYPES: Record<string, {
   },
   "gradient": {
     name: "Gradient", category: "Non-Reactive",
-    description: "Scrolling color gradient. Best background effect.",
-    commonParams: ["gradient", "gradient_roll", "speed"],
+    description: "Static or slowly rolling gradient across the strip, supports modulation",
+    commonParams: ["gradient", "gradient_roll", "speed", "modulate", "modulation_effect", "modulation_speed"],
     audioReactive: false, hasGradient: true, is2D: false,
     blenderRoles: ["background"],
   },
@@ -509,6 +509,28 @@ export const EFFECT_TYPES: Record<string, {
     description: "Numeric overlay display (diagnostic)",
     commonParams: ["value_source", "gradient"],
     audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: [],
+  },
+  // ── 2D / Matrix ─────────────────────────────────────────────────────────────
+  "blocks": {
+    name: "Blocks", category: "2D",
+    description: "Colour blocks on a 2D matrix with gradient roll",
+    commonParams: ["gradient", "gradient_roll", "block_count"],
+    audioReactive: true, hasGradient: true, is2D: true,
+    blenderRoles: ["background"],
+  },
+  "smoke2d": {
+    name: "Smoke", category: "Matrix",
+    description: "Flowing smoke simulation on a 2D matrix with gradient",
+    commonParams: ["gradient", "speed", "stretch", "zoom", "impulse_decay", "multiplier"],
+    audioReactive: false, hasGradient: true, is2D: true,
+    blenderRoles: ["background"],
+  },
+  "frontend": {
+    name: "Frontend", category: "Matrix",
+    description: "Frontend-driven matrix display (diagnostic / dev tool)",
+    commonParams: ["background_mode", "rotate", "flip_horizontal", "flip_vertical"],
+    audioReactive: false, hasGradient: false, is2D: true,
     blenderRoles: [],
   },
   // ── Special ────────────────────────────────────────────────────────────────

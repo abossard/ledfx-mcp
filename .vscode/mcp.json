@@ -1,8 +1,8 @@
 {
-  "mcpServers": {
+  "servers": {
     "ledfx": {
       "command": "npm",
-      "args": ["run", "start", "--prefix", "/absolute/path/to/ledfx-mcp"],
+      "args": ["run", "start", "--prefix", "${workspaceFolder}"],
       "env": {
         "LEDFX_HOST": "localhost",
         "LEDFX_PORT": "8888"

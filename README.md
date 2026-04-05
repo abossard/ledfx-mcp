@@ -145,6 +145,25 @@ Add the following to your Claude Desktop configuration file:
 }
 ```
 
+**Auto-recompile on every start (recommended for development):**
+
+Using `npm run start` ensures the TypeScript source is recompiled (`prestart` hook) each time the MCP client launches the server, so you never run stale code:
+
+```json
+{
+  "mcpServers": {
+    "ledfx": {
+      "command": "npm",
+      "args": ["run", "start", "--prefix", "/absolute/path/to/ledfx-mcp"],
+      "env": {
+        "LEDFX_HOST": "localhost",
+        "LEDFX_PORT": "8888"
+      }
+    }
+  }
+}
+```
+
 If you prefer to run from Git without a local build, use `npx` as the command:
 
 ```json

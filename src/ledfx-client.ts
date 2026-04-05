@@ -128,6 +128,16 @@ export interface LedFxColorsResponse {
   };
 }
 
+export interface LedFxIntegration {
+  id: string;
+  type: string;
+  active: boolean;
+  status: number;
+  beta: boolean;
+  data: unknown;
+  config: Record<string, unknown>;
+}
+
 // ========== Backup/Restore Types ==========
 
 export interface BackupVirtualEffect {
@@ -452,14 +462,19 @@ export class LedFxClient {
   async setVirtualEffect(
     virtualId: string,
     effectType: string,
-    config: Record<string, any> = {}
+    config: Record<string, any> = {},
+    fallback?: boolean | number | null
   ): Promise<void> {
+    const body: Record<string, unknown> = {
+      type: effectType,
+      config,
+    };
+    if (fallback !== undefined && fallback !== null) {
+      body.fallback = fallback;
+    }
     await this.request(`/virtuals/${virtualId}/effects`, {
       method: "POST",
-      body: JSON.stringify({
-        type: effectType,
-        config,
-      }),
+      body: JSON.stringify(body),
     });
   }
 
@@ -482,6 +497,269 @@ export class LedFxClient {
   async clearVirtualEffect(virtualId: string): Promise<void> {
     await this.request(`/virtuals/${virtualId}/effects`, {
       method: "DELETE",
+    });
+  }
+
+  /**
+   * Clear all effects on all virtuals (action)
+   */
+  async clearAllEffects(): Promise<void> {
+    await this.request(`/effects`, {
+      method: "PUT",
+      body: JSON.stringify({
+        action: "clear_all_effects",
+      }),
+    });
+  }
+
+  /**
+   * Apply global config (gradient, brightness, etc.) to all active effects (action)
+   */
+  async applyGlobal(config: Record<string, unknown>, virtuals?: string[]): Promise<string> {
+    const body: Record<string, unknown> = {
+      action: "apply_global",
+      ...config,
+    };
+    if (virtuals) {
+      body.virtuals = virtuals;
+    }
+    const response = await this.request<{
+      payload?: { reason?: string };
+    }>(`/effects`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    return response.payload?.reason || "Applied global config";
+  }
+
+  /**
+   * Apply a specific effect to multiple virtuals at once (action)
+   */
+  async applyGlobalEffect(
+    effectType: string,
+    config: Record<string, unknown> = {},
+    virtuals?: string[],
+    fallback?: boolean | number | null
+  ): Promise<string> {
+    const body: Record<string, unknown> = {
+      action: "apply_global_effect",
+      type: effectType,
+      config,
+    };
+    if (virtuals) {
+      body.virtuals = virtuals;
+    }
+    if (fallback !== undefined && fallback !== null) {
+      body.fallback = fallback;
+    }
+    const response = await this.request<{
+      payload?: { reason?: string };
+    }>(`/effects`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    return response.payload?.reason || "Applied global effect";
+  }
+
+  /**
+   * Delete an effect from a virtual's effect history (action)
+   */
+  async deleteEffectHistory(virtualId: string, effectType: string): Promise<void> {
+    await this.request(`/virtuals/${virtualId}/effects/delete`, {
+      method: "POST",
+      body: JSON.stringify({ type: effectType }),
+    });
+  }
+
+  /**
+   * Trigger fallback on a virtual, reverting to its default effect (action)
+   */
+  async triggerFallback(virtualId: string): Promise<void> {
+    await this.request(`/virtuals/${virtualId}/fallback`);
+  }
+
+  /**
+   * Delete a virtual and clean up scene references (action)
+   */
+  async deleteVirtual(virtualId: string): Promise<void> {
+    await this.request(`/virtuals/${virtualId}`, {
+      method: "DELETE",
+    });
+  }
+
+  /**
+   * Update virtual LED segments (action)
+   */
+  async updateVirtualSegments(virtualId: string, segments: unknown[]): Promise<void> {
+    await this.request(`/virtuals/${virtualId}`, {
+      method: "POST",
+      body: JSON.stringify({ segments }),
+    });
+  }
+
+  /**
+   * Toggle global pause on all virtuals (action)
+   */
+  async togglePauseAll(): Promise<boolean> {
+    const response = await this.request<{ paused?: boolean }>(`/virtuals`, {
+      method: "PUT",
+    });
+    return response.paused ?? false;
+  }
+
+  /**
+   * Shutdown or restart LedFX (action)
+   */
+  async power(action: "shutdown" | "restart", timeout: number = 0): Promise<void> {
+    await this.request(`/power`, {
+      method: "POST",
+      body: JSON.stringify({ action, timeout }),
+    });
+  }
+
+  /**
+   * Get full LedFX configuration (action)
+   */
+  async getConfig(keys?: string[]): Promise<Record<string, unknown>> {
+    const options: RequestInit = {};
+    if (keys && keys.length > 0) {
+      options.method = "GET";
+      options.body = JSON.stringify(keys);
+    }
+    return await this.request<Record<string, unknown>>(`/config`, options);
+  }
+
+  /**
+   * Update specific config sections (action)
+   */
+  async updateConfig(config: Record<string, unknown>): Promise<void> {
+    await this.request(`/config`, {
+      method: "PUT",
+      body: JSON.stringify(config),
+    });
+  }
+
+  /**
+   * Import complete config (with version migration) (action)
+   */
+  async importConfig(config: Record<string, unknown>): Promise<void> {
+    await this.request(`/config`, {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+  }
+
+  /**
+   * Reset config to defaults (triggers restart) (action)
+   */
+  async resetConfig(): Promise<void> {
+    await this.request(`/config`, {
+      method: "DELETE",
+    });
+  }
+
+  /**
+   * List all integrations (action)
+   */
+  async getIntegrations(): Promise<Record<string, LedFxIntegration>> {
+    const response = await this.request<{
+      integrations: Record<string, LedFxIntegration>;
+    }>(`/integrations`);
+    return response.integrations || {};
+  }
+
+  /**
+   * Create a new integration (action)
+   */
+  async createIntegration(
+    type: string,
+    config: Record<string, unknown>
+  ): Promise<void> {
+    await this.request(`/integrations`, {
+      method: "POST",
+      body: JSON.stringify({ type, config }),
+    });
+  }
+
+  /**
+   * Toggle an integration on/off (action)
+   */
+  async toggleIntegration(integrationId: string): Promise<void> {
+    await this.request(`/integrations`, {
+      method: "PUT",
+      body: JSON.stringify({ id: integrationId }),
+    });
+  }
+
+  /**
+   * Delete an integration (action)
+   */
+  async deleteIntegration(integrationId: string): Promise<void> {
+    await this.request(`/integrations`, {
+      method: "DELETE",
+      body: JSON.stringify({ id: integrationId }),
+    });
+  }
+
+  /**
+   * Get QLC+ integration info (widgets, event types, listeners) (action)
+   */
+  async getQlcInfo(integrationId: string): Promise<Record<string, unknown>> {
+    return await this.request<Record<string, unknown>>(
+      `/integrations/qlc/${encodeURIComponent(integrationId)}`
+    );
+  }
+
+  /**
+   * Create a QLC+ event mapping (action)
+   */
+  async createQlcEvent(
+    integrationId: string,
+    eventType: string,
+    eventFilter: Record<string, string>,
+    qlcPayload: Record<string, unknown>
+  ): Promise<void> {
+    await this.request(`/integrations/qlc/${encodeURIComponent(integrationId)}`, {
+      method: "POST",
+      body: JSON.stringify({
+        event_type: eventType,
+        event_filter: eventFilter,
+        qlc_payload: qlcPayload,
+      }),
+    });
+  }
+
+  /**
+   * Toggle a QLC+ event mapping on/off (action)
+   */
+  async toggleQlcEvent(
+    integrationId: string,
+    eventType: string,
+    eventFilter: Record<string, string>
+  ): Promise<void> {
+    await this.request(`/integrations/qlc/${encodeURIComponent(integrationId)}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        event_type: eventType,
+        event_filter: eventFilter,
+      }),
+    });
+  }
+
+  /**
+   * Delete a QLC+ event mapping (action)
+   */
+  async deleteQlcEvent(
+    integrationId: string,
+    eventType: string,
+    eventFilter: Record<string, string>
+  ): Promise<void> {
+    await this.request(`/integrations/qlc/${encodeURIComponent(integrationId)}`, {
+      method: "DELETE",
+      body: JSON.stringify({
+        event_type: eventType,
+        event_filter: eventFilter,
+      }),
     });
   }
 
@@ -571,37 +849,6 @@ export class LedFxClient {
   }
 
   /**
-   * DEPRECATED: Use setVirtualEffect instead
-   * @deprecated This method uses the wrong endpoint. Use setVirtualEffect.
-   */
-  async setEffect(
-    deviceId: string,
-    effectType: string,
-    config: Record<string, any> = {}
-  ): Promise<void> {
-    console.error("WARNING: setEffect is deprecated. Use setVirtualEffect instead.");
-    // Keep for backwards compatibility but log warning
-    await this.request(`/devices/${deviceId}/effects`, {
-      method: "POST",
-      body: JSON.stringify({
-        type: effectType,
-        config,
-      }),
-    });
-  }
-
-  /**
-   * DEPRECATED: Use clearVirtualEffect instead
-   * @deprecated This method uses the wrong endpoint. Use clearVirtualEffect.
-   */
-  async clearEffect(deviceId: string): Promise<void> {
-    console.error("WARNING: clearEffect is deprecated. Use clearVirtualEffect instead.");
-    await this.request(`/devices/${deviceId}/effects`, {
-      method: "DELETE",
-    });
-  }
-
-  /**
    * Get all scenes (action)
    */
   async getScenes(): Promise<LedFxScene[]> {
@@ -645,6 +892,33 @@ export class LedFxClient {
       body: JSON.stringify({
         id: sceneId,
         action: "activate",
+      }),
+    });
+  }
+
+  /**
+   * Deactivate a scene (action)
+   */
+  async deactivateScene(sceneId: string): Promise<void> {
+    await this.request(`/scenes`, {
+      method: "PUT",
+      body: JSON.stringify({
+        id: sceneId,
+        action: "deactivate",
+      }),
+    });
+  }
+
+  /**
+   * Rename a scene (action)
+   */
+  async renameScene(sceneId: string, newName: string): Promise<void> {
+    await this.request(`/scenes`, {
+      method: "PUT",
+      body: JSON.stringify({
+        id: sceneId,
+        action: "rename",
+        name: newName,
       }),
     });
   }
