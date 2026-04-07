@@ -2211,8 +2211,14 @@ export async function handleToolCall(
 
       // ========== AI Scene Creation ==========
       case "ledfx_create_scene_from_description": {
-        const colorsResponse = await client.getColors();
-        const catalog = buildColorCatalog(colorsResponse);
+        // parseSceneDescription is a pure calculation; fall back to empty catalog if API unavailable
+        let catalog: LedFxColorCatalog = { colors: {}, gradients: {} };
+        try {
+          const colorsResponse = await client.getColors();
+          catalog = buildColorCatalog(colorsResponse);
+        } catch {
+          // LedFX not reachable — proceed with empty catalog
+        }
         const parsed = parseSceneDescription(args.description, catalog);
         
         // Get target virtuals
@@ -2702,8 +2708,14 @@ export async function handleToolCall(
 
       // ========== Recommendations ==========
       case "ledfx_recommend_effects": {
-        const colorsResponse = await client.getColors();
-        const catalog = buildColorCatalog(colorsResponse);
+        // recommendEffects is a pure calculation; fall back to empty catalog if API unavailable
+        let catalog: LedFxColorCatalog = { colors: {}, gradients: {} };
+        try {
+          const colorsResponse = await client.getColors();
+          catalog = buildColorCatalog(colorsResponse);
+        } catch {
+          // LedFX not reachable — proceed with empty catalog
+        }
         const recommendations = recommendEffects(args.description, args.mood, catalog);
         return formatResponse(recommendations);
       }
