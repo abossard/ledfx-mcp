@@ -35,21 +35,57 @@ export interface LedFxDevice {
   config: Record<string, unknown>;
 }
 
+export type LedFxBlenderStretchMode = "2d full" | "2d tile";
+
+export interface LedFxVirtualConfig {
+  name: string;
+  pixel_count?: number;
+  transition_mode?: LedFxTransitionMode;
+  transition_time?: number;
+  frequency_min?: number;
+  frequency_max?: number;
+  grouping?: number;
+  max_brightness?: number;
+  preview_only?: boolean;
+  rotate?: number;
+  rows?: number;
+  complex_segments?: boolean;
+  center_offset?: number;
+  icon_name?: string;
+  mapping?: "span" | "copy";
+  [key: string]: unknown;
+}
+
 export interface LedFxVirtual {
   id: string;
-  config: {
-    name: string;
-    pixel_count?: number;
-    transition_mode?: LedFxTransitionMode;
-    transition_time?: number;
-    [key: string]: unknown;
-  };
+  config: LedFxVirtualConfig;
   active: boolean;
   effect?: {
     type: string;
     config: Record<string, unknown>;
   };
   segments?: Array<[string, number, number, boolean]>;
+  streaming?: boolean;
+  last_effect?: Record<string, unknown> | null;
+  is_device?: string;
+  auto_generated?: boolean;
+  pixel_count?: number;
+}
+
+export interface LedFxVirtualsResponse {
+  status: string;
+  virtuals: Record<string, LedFxVirtual>;
+  paused: boolean;
+}
+
+export interface LedFxInfo {
+  url: string;
+  name: string;
+  version: string;
+  github_sha: string;
+  is_release: string;
+  developer_mode: boolean;
+  features: Record<string, boolean>;
 }
 
 export interface LedFxSceneVirtual {
@@ -365,8 +401,8 @@ export class LedFxClient {
   /**
    * Get server information (action)
    */
-  async getInfo(): Promise<Record<string, any>> {
-    return await this.request("/info");
+  async getInfo(): Promise<LedFxInfo> {
+    return await this.request<LedFxInfo>("/info");
   }
 
   /**
@@ -390,10 +426,21 @@ export class LedFxClient {
    * Get all virtuals (action)
    */
   async getVirtuals(): Promise<LedFxVirtual[]> {
-    const response = await this.request<{ virtuals: Record<string, LedFxVirtual> }>(
+    const response = await this.request<LedFxVirtualsResponse>(
       "/virtuals"
     );
     return Object.values(response.virtuals || {});
+  }
+
+  /**
+   * Get all virtuals with global paused state (action)
+   */
+  async getVirtualsWithState(): Promise<{ virtuals: LedFxVirtual[]; paused: boolean }> {
+    const response = await this.request<LedFxVirtualsResponse>("/virtuals");
+    return {
+      virtuals: Object.values(response.virtuals || {}),
+      paused: response.paused ?? false,
+    };
   }
 
   /**
@@ -1571,6 +1618,63 @@ export class LedFxClient {
     }
 
     return { valid: errors.length === 0, errors };
+  }
+
+  /**
+   * Trigger device discovery on the network (action)
+   */
+  async findDevices(): Promise<{ status: string }> {
+    return await this.request<{ status: string }>("/find_devices", {
+      method: "POST",
+    });
+  }
+
+  /**
+   * Get global brightness value from config (action)
+   */
+  async getGlobalBrightness(): Promise<number> {
+    const config = await this.getConfig();
+    return (config.global_brightness as number) ?? 1.0;
+  }
+
+  /**
+   * Set global brightness via config update (action)
+   */
+  async setGlobalBrightness(brightness: number): Promise<void> {
+    await this.updateConfig({ global_brightness: Math.max(0, Math.min(1, brightness)) });
+  }
+
+  /**
+   * Get the startup scene ID from config (action)
+   */
+  async getStartupScene(): Promise<string> {
+    const config = await this.getConfig();
+    return (config.startup_scene_id as string) ?? "";
+  }
+
+  /**
+   * Set the startup scene ID via config update (action)
+   */
+  async setStartupScene(sceneId: string): Promise<void> {
+    await this.updateConfig({ startup_scene_id: sceneId });
+  }
+
+  /**
+   * Send a notification to the LedFX frontend (action)
+   */
+  async sendNotification(title: string, text: string): Promise<void> {
+    await this.request("/notify", {
+      method: "POST",
+      body: JSON.stringify({ title, text }),
+    });
+  }
+
+  /**
+   * Get the global paused state for all virtuals (action)
+   */
+  async getPausedState(): Promise<boolean> {
+    const response = await this.request<LedFxVirtualsResponse>("/virtuals");
+    return response.paused ?? false;
   }
 }
 

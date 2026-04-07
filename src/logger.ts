@@ -161,12 +161,17 @@ export function lifecycle(event: string, details?: unknown): void {
 /**
  * Create a child logger with a specific component prefix
  */
-export function createLogger(component: string) {
+export function createLogger(component: string): {
+  debug: (message: string, data?: unknown) => void;
+  info: (message: string, data?: unknown) => void;
+  warn: (message: string, data?: unknown) => void;
+  error: (message: string, data?: unknown) => void;
+} {
   return {
-    debug: (message: string, data?: unknown) => debug(`[${component}] ${message}`, data),
-    info: (message: string, data?: unknown) => info(`[${component}] ${message}`, data),
-    warn: (message: string, data?: unknown) => warn(`[${component}] ${message}`, data),
-    error: (message: string, data?: unknown) => error(`[${component}] ${message}`, data),
+    debug: (message: string, data?: unknown): void => debug(`[${component}] ${message}`, data),
+    info: (message: string, data?: unknown): void => info(`[${component}] ${message}`, data),
+    warn: (message: string, data?: unknown): void => warn(`[${component}] ${message}`, data),
+    error: (message: string, data?: unknown): void => error(`[${component}] ${message}`, data),
   };
 }
 

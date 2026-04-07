@@ -537,7 +537,7 @@ export const EFFECT_TYPES: Record<string, {
   "blender": {
     name: "Blender", category: "Matrix",
     description: "Meta-effect: combines background + foreground using a mask. Do not nest.",
-    commonParams: ["background", "foreground", "mask", "invert_mask", "mask_cutoff"],
+    commonParams: ["background", "foreground", "mask", "invert_mask", "mask_cutoff", "foreground_stretch", "background_stretch", "mask_stretch"],
     audioReactive: true, hasGradient: false, is2D: false,
     blenderRoles: [],
   },

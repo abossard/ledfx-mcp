@@ -218,17 +218,25 @@ Once configured, you can interact with your LedFX setup through natural language
 
 ## Available Tools
 
-The server exposes 40+ MCP tools organized into categories:
+The server exposes 85+ MCP tools organized into categories:
 
 ### Core Management
 | Tool | Description |
 |------|-------------|
-| `ledfx_get_info` | Get LedFX server information |
+| `ledfx_get_info` | Get LedFX server information (version, features) |
 | `ledfx_list_devices` | List all physical LED devices |
 | `ledfx_get_device` | Get details about a specific device |
-| `ledfx_list_virtuals` | List all virtual LED strips |
+| `ledfx_list_virtuals` | List all virtual LED strips (includes global paused state) |
 | `ledfx_get_virtual` | Get details about a specific virtual |
 | `ledfx_activate_virtual` | Activate/deactivate a virtual |
+| `ledfx_update_virtual_config` | Update virtual config (transitions, brightness, frequency range, matrix) |
+| `ledfx_find_devices` | Trigger network device discovery |
+| `ledfx_get_paused_state` | Check if all virtuals are globally paused |
+| `ledfx_toggle_pause_all` | Toggle global pause on all virtuals |
+| `ledfx_get_global_brightness` | Get global brightness value (0-1) |
+| `ledfx_set_global_brightness` | Set global brightness for all virtuals |
+| `ledfx_set_startup_scene` | Set scene to activate on LedFX startup |
+| `ledfx_send_notification` | Send notification to LedFX frontend UI |
 
 ### Effect Control (CORRECTED - uses virtuals)
 | Tool | Description |

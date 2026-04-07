@@ -532,7 +532,7 @@ export const tools: Tool[] = [
   },
   {
     name: "ledfx_update_virtual_config",
-    description: "Safely update virtual transition settings. Use this to configure hard cuts vs soft transitions.",
+    description: "Update virtual configuration: transitions, brightness, frequency range, matrix settings, and more.",
     inputSchema: {
       type: "object",
       properties: {
@@ -550,6 +550,43 @@ export const tools: Tool[] = [
           minimum: 0,
           maximum: 5,
           description: "Transition time in seconds (0-5)",
+        },
+        max_brightness: {
+          type: "number",
+          minimum: 0,
+          maximum: 1,
+          description: "Max brightness for this virtual (0-1)",
+        },
+        frequency_min: {
+          type: "integer",
+          minimum: 20,
+          maximum: 15000,
+          description: "Lowest frequency for audio reactive effects (Hz)",
+        },
+        frequency_max: {
+          type: "integer",
+          minimum: 20,
+          maximum: 15000,
+          description: "Highest frequency for audio reactive effects (Hz)",
+        },
+        grouping: {
+          type: "integer",
+          minimum: 0,
+          description: "Number of physical pixels per virtual pixel group",
+        },
+        preview_only: {
+          type: "boolean",
+          description: "Preview pixels without updating physical devices",
+        },
+        rows: {
+          type: "integer",
+          description: "Matrix row count (>1 makes this a matrix virtual)",
+        },
+        rotate: {
+          type: "integer",
+          minimum: 0,
+          maximum: 3,
+          description: "90-degree rotation steps (0-3)",
         },
       },
       required: ["virtual_id"],
@@ -626,6 +663,14 @@ export const tools: Tool[] = [
         blender_config: {
           type: "object",
           description: "Additional blender configuration (stretch, cutoff, invert, brightness)",
+          properties: {
+            foreground_stretch: { type: "string", enum: ["2d full", "2d tile"], description: "How to stretch foreground pixels" },
+            background_stretch: { type: "string", enum: ["2d full", "2d tile"], description: "How to stretch background pixels" },
+            mask_stretch: { type: "string", enum: ["2d full", "2d tile"], description: "How to stretch mask pixels" },
+            mask_cutoff: { type: "number", minimum: 0.01, maximum: 1.0, description: "Mask cutoff threshold (1 = luminance as alpha)" },
+            invert_mask: { type: "boolean", description: "Switch foreground and background" },
+            brightness: { type: "number", minimum: 0, maximum: 1, description: "Overall brightness" },
+          },
           additionalProperties: true,
         },
       },
@@ -1728,6 +1773,74 @@ export const tools: Tool[] = [
       required: ["integration_id", "event_type", "event_filter"],
     },
   },
+
+  // ── Phase 6: LedFX 2.1.7 Features ────────────────────────────────────────
+  {
+    name: "ledfx_find_devices",
+    description: "Trigger network device discovery to find new LED devices (WLED, etc.)",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "ledfx_get_global_brightness",
+    description: "Get the global brightness value (0-1) that applies to all virtuals",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "ledfx_set_global_brightness",
+    description: "Set the global brightness for all virtuals (0-1)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brightness: {
+          type: "number",
+          minimum: 0,
+          maximum: 1,
+          description: "Global brightness value (0 = off, 1 = full)",
+        },
+      },
+      required: ["brightness"],
+    },
+  },
+  {
+    name: "ledfx_set_startup_scene",
+    description: "Set which scene activates automatically when LedFX starts",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scene_id: {
+          type: "string",
+          description: "Scene ID to activate on startup, or empty string to disable",
+        },
+      },
+      required: ["scene_id"],
+    },
+  },
+  {
+    name: "ledfx_get_paused_state",
+    description: "Check whether all virtuals are globally paused",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "ledfx_send_notification",
+    description: "Send a notification to the LedFX frontend UI",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Notification title" },
+        text: { type: "string", description: "Notification body text" },
+      },
+      required: ["title", "text"],
+    },
+  },
 ];
 
 /**
@@ -1804,8 +1917,8 @@ export async function handleToolCall(
 
       // ========== Virtuals ==========
       case "ledfx_list_virtuals": {
-        const virtuals = await client.getVirtuals();
-        return formatResponse(virtuals);
+        const { virtuals, paused } = await client.getVirtualsWithState();
+        return formatResponse({ virtuals, paused });
       }
 
       case "ledfx_get_virtual": {
@@ -1833,9 +1946,16 @@ export async function handleToolCall(
         const transitionModeRaw = args.transition_mode;
         const transitionTimeRaw = args.transition_time;
 
-        if (transitionModeRaw === undefined && transitionTimeRaw === undefined) {
+        const configFields = [
+          "transition_mode", "transition_time", "max_brightness",
+          "frequency_min", "frequency_max", "grouping",
+          "preview_only", "rows", "rotate",
+        ] as const;
+
+        const hasAnyField = configFields.some((f) => args[f] !== undefined);
+        if (!hasAnyField) {
           return formatResponse({
-            error: "Provide at least one of transition_mode or transition_time.",
+            error: `Provide at least one config field: ${configFields.join(", ")}`,
           });
         }
 
@@ -1866,11 +1986,10 @@ export async function handleToolCall(
         const currentVirtual = await client.getVirtual(args.virtual_id);
 
         const updates: Record<string, unknown> = {};
-        if (transitionModeRaw !== undefined) {
-          updates.transition_mode = transitionModeRaw as LedFxTransitionMode;
-        }
-        if (transitionTimeRaw !== undefined) {
-          updates.transition_time = transitionTimeRaw as number;
+        for (const field of configFields) {
+          if (args[field] !== undefined) {
+            updates[field] = args[field];
+          }
         }
 
         const updatedVirtual = await client.updateVirtualConfig(args.virtual_id, updates, {
@@ -1880,10 +1999,10 @@ export async function handleToolCall(
 
         return formatResponse({
           success: true,
-          message: `Virtual '${args.virtual_id}' transition config updated`,
+          message: `Virtual '${args.virtual_id}' config updated`,
           virtual_id: args.virtual_id,
-          transition_mode: transitionConfig.transition_mode ?? null,
-          transition_time: transitionConfig.transition_time ?? null,
+          updated_fields: Object.keys(updates),
+          config: transitionConfig,
         });
       }
 
@@ -3024,6 +3143,40 @@ export async function handleToolCall(
           args.event_filter as Record<string, string>
         );
         return formatResponse({ status: "success", message: "QLC+ event mapping deleted" });
+      }
+
+      // ========== LedFX 2.1.7 Features ==========
+      case "ledfx_find_devices": {
+        const result = await client.findDevices();
+        return formatResponse({ message: "Device discovery triggered", ...result });
+      }
+
+      case "ledfx_get_global_brightness": {
+        const brightness = await client.getGlobalBrightness();
+        return formatResponse({ global_brightness: brightness });
+      }
+
+      case "ledfx_set_global_brightness": {
+        await client.setGlobalBrightness(args.brightness as number);
+        return formatResponse({ success: true, message: `Global brightness set to ${args.brightness}` });
+      }
+
+      case "ledfx_set_startup_scene": {
+        await client.setStartupScene(args.scene_id as string);
+        const msg = args.scene_id
+          ? `Startup scene set to '${args.scene_id}'`
+          : "Startup scene disabled";
+        return formatResponse({ success: true, message: msg });
+      }
+
+      case "ledfx_get_paused_state": {
+        const paused = await client.getPausedState();
+        return formatResponse({ paused });
+      }
+
+      case "ledfx_send_notification": {
+        await client.sendNotification(args.title as string, args.text as string);
+        return formatResponse({ success: true, message: "Notification sent" });
       }
 
       default:

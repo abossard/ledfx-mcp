@@ -75,7 +75,8 @@ describe("virtual transition config tool", () => {
       { active: true }
     );
     expect(payload.success).toBe(true);
-    expect(payload.transition_mode).toBe("Add");
-    expect(payload.transition_time).toBe(0.8);
+    expect(payload.config.transition_mode).toBe("Add");
+    expect(payload.config.transition_time).toBe(0.8);
+    expect(payload.updated_fields).toEqual(["transition_mode", "transition_time"]);
   });
 });
