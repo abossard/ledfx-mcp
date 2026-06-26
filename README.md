@@ -66,7 +66,7 @@ This MCP server is implemented against current LedFX APIs and validated with aut
 - **[Installation Guide](INSTALL.md)** - Step-by-step setup instructions
 - **[Usage Guide](docs/USAGE_GUIDE.md)** - How to use all features
 
-**Status:** Ready for production use with LedFX 2.1.4+
+**Status:** Ready for production use with LedFX 2.1.4+ (verified end-to-end against LedFX 2.1.9)
 
 ## Prerequisites
 
@@ -237,6 +237,8 @@ The server exposes 85+ MCP tools organized into categories:
 | `ledfx_set_global_brightness` | Set global brightness for all virtuals |
 | `ledfx_set_startup_scene` | Set scene to activate on LedFX startup |
 | `ledfx_send_notification` | Send notification to LedFX frontend UI |
+| `ledfx_get_now_playing` | Get current Now Playing state (track metadata, artwork) and config |
+| `ledfx_update_now_playing` | Update Now Playing config (gradient / track_text / album_art sections) |
 
 ### Effect Control (CORRECTED - uses virtuals)
 | Tool | Description |

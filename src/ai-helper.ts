@@ -240,6 +240,13 @@ export const EFFECT_TYPES: Record<string, {
     audioReactive: true, hasGradient: false, is2D: false,
     blenderRoles: ["mask"],
   },
+  "spotlight": {
+    name: "Spotlight", category: "Classic",
+    description: "Audio-triggered spotlights spawn and fade across the strip; gradient-colored beams with random placement",
+    commonParams: ["gradient", "spot_width", "fade_time", "max_active_spots", "spot_color_span"],
+    audioReactive: true, hasGradient: true, is2D: false,
+    blenderRoles: ["mask", "foreground"],
+  },
   "wavelength": {
     name: "Wavelength", category: "Classic",
     description: "Melbank mapped to gradient. Simple and effective mask.",

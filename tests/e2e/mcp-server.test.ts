@@ -140,10 +140,17 @@ describe('End-to-End MCP Server Tests', () => {
         console.log('Skipped - LedFX not running');
         return;
       }
-      // Fetch real scene IDs from the running LedFX instance
+      // Fetch real scene IDs from the running LedFX instance.
+      // ledfx_list_scenes returns a bare array of normalized scene objects.
       const scenesResult = await handleToolCall('ledfx_list_scenes', {});
       const scenesData = JSON.parse(scenesResult.content[0].text);
-      const sceneIds = Object.keys(scenesData.scenes ?? {}).slice(0, 2);
+      const sceneList = Array.isArray(scenesData)
+        ? scenesData
+        : Object.values(scenesData.scenes ?? {});
+      const sceneIds = sceneList
+        .map((s: any) => s.id)
+        .filter(Boolean)
+        .slice(0, 2);
       if (sceneIds.length < 1) {
         console.log('Skipped - no scenes available on LedFX');
         return;

@@ -164,6 +164,62 @@ export interface LedFxColorsResponse {
   };
 }
 
+export interface NowPlayingGradientConfig {
+  enabled: boolean;
+  variant: "led_safe" | "led_punchy" | "led_max";
+  virtual_ids: string[];
+}
+
+export interface NowPlayingTrackTextConfig {
+  enabled: boolean;
+  duration: number;
+  virtual_ids: string[];
+  preset: string;
+}
+
+export interface NowPlayingAlbumArtConfig {
+  enabled: boolean;
+  duration: number;
+  virtual_ids: string[];
+}
+
+export interface NowPlayingConfig {
+  gradient: NowPlayingGradientConfig;
+  track_text: NowPlayingTrackTextConfig;
+  album_art: NowPlayingAlbumArtConfig;
+}
+
+/** Partial update payload: any subset of sections, each a partial section. LedFX merges per-section server-side. */
+export interface NowPlayingConfigUpdate {
+  gradient?: Partial<NowPlayingGradientConfig>;
+  track_text?: Partial<NowPlayingTrackTextConfig>;
+  album_art?: Partial<NowPlayingAlbumArtConfig>;
+}
+
+/** Track metadata as exposed by LedFX (null when nothing is playing). */
+export interface NowPlayingTrackMetadata {
+  source_id: string | null;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  track_id: string | null;
+  artwork_url: string | null;
+  artwork_hash: string | null;
+  updated_at: number | null;
+}
+
+/** Full now-playing state: current track metadata/artwork plus the resolved config. */
+export interface NowPlayingState {
+  active_source_id: string | null;
+  metadata: NowPlayingTrackMetadata | null;
+  artwork: Record<string, unknown> | null;
+  current_gradient: unknown;
+  selected_gradient_variant: string | null;
+  updated_at: number | null;
+  config: NowPlayingConfig;
+  [key: string]: unknown;
+}
+
 export interface LedFxIntegration {
   id: string;
   type: string;
@@ -665,15 +721,25 @@ export class LedFxClient {
   }
 
   /**
-   * Get full LedFX configuration (action)
+   * Get LedFX configuration, optionally narrowed to specific keys (action + calculation)
+   *
+   * LedFX's `GET /api/config` filters by the keys sent in the request *body*,
+   * but the fetch standard forbids a body on GET requests. So we fetch the full
+   * config (no body) and filter the requested keys client-side. This keeps the
+   * public `keys` contract while staying spec-compliant.
    */
   async getConfig(keys?: string[]): Promise<Record<string, unknown>> {
-    const options: RequestInit = {};
-    if (keys && keys.length > 0) {
-      options.method = "GET";
-      options.body = JSON.stringify(keys);
+    const config = await this.request<Record<string, unknown>>(`/config`);
+    if (!keys || keys.length === 0) {
+      return config;
     }
-    return await this.request<Record<string, unknown>>(`/config`, options);
+    const filtered: Record<string, unknown> = {};
+    for (const key of keys) {
+      if (key in config) {
+        filtered[key] = config[key];
+      }
+    }
+    return filtered;
   }
 
   /**
@@ -1124,6 +1190,54 @@ export class LedFxClient {
         audio_device: deviceIndex,
       }),
     });
+  }
+
+  /**
+   * Get the current Now Playing state and configuration (action)
+   * GET /api/now-playing returns a bare payload: current track metadata plus
+   * a `config` object (gradient / track_text / album_art sections).
+   */
+  async getNowPlaying(): Promise<NowPlayingState> {
+    return await this.request<NowPlayingState>("/now-playing");
+  }
+
+  /**
+   * Update Now Playing configuration (action)
+   * PUT /api/now-playing with a partial config. LedFX merges each provided
+   * section over the current config, validates, persists, and returns the full
+   * validated config under the response `data` field.
+   */
+  async updateNowPlaying(
+    config: NowPlayingConfigUpdate
+  ): Promise<NowPlayingConfig> {
+    const endpoint = "/now-playing";
+    const response = await this.request<{
+      status?: string;
+      data?: NowPlayingConfig;
+      payload?: { reason?: string };
+    }>(endpoint, {
+      method: "PUT",
+      body: JSON.stringify(config),
+    });
+    // LedFX signals a validation failure with HTTP 200 + {status:"failed"},
+    // which request() does not treat as an error. Surface it explicitly so the
+    // tool reports a failure instead of a false success.
+    if (response.status === "failed") {
+      const reason =
+        response.payload?.reason ?? "Now Playing configuration rejected";
+      throw new LedFxApiError(`LedFX API error: ${reason}`, {
+        method: "PUT",
+        endpoint,
+        url: `${this.baseUrl}${endpoint}`,
+        durationMs: 0,
+        status: 200,
+        statusText: "OK",
+        responseBody: JSON.stringify(response),
+      });
+    }
+    // request_success wraps the validated config under `data`; fall back to the
+    // raw payload in case a future LedFX build returns it bare.
+    return response.data ?? (response as unknown as NowPlayingConfig);
   }
 
   // ========== LedFX Native Playlist Management ==========

@@ -23,6 +23,7 @@ import {
   LedFxSceneVirtual,
   LedFxTransitionMode,
   LedFxVirtual,
+  NowPlayingConfigUpdate,
   RestoreOptions,
 } from "./ledfx-client.js";
 import { parseSceneDescription, recommendEffects, explainFeature, getFeatureCategories, getEffectsForBlenderRole, getNonReactiveEffects, EFFECT_TYPES, LedFxColorCatalog } from "./ai-helper.js";
@@ -1841,6 +1842,66 @@ export const tools: Tool[] = [
       required: ["title", "text"],
     },
   },
+  {
+    name: "ledfx_get_now_playing",
+    description:
+      "Get the current Now Playing state (track metadata + artwork reference) and its configuration (gradient, track_text, album_art sections).",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "ledfx_update_now_playing",
+    description:
+      "Update Now Playing configuration. Accepts a partial config; unspecified sections retain their current values. Sections: gradient {enabled, variant: led_safe|led_punchy|led_max, virtual_ids}, track_text {enabled, duration 0-60, virtual_ids, preset}, album_art {enabled, duration 0-60, virtual_ids}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        gradient: {
+          type: "object",
+          description: "Gradient overlay settings",
+          properties: {
+            enabled: { type: "boolean" },
+            variant: {
+              type: "string",
+              enum: ["led_safe", "led_punchy", "led_max"],
+            },
+            virtual_ids: {
+              type: "array",
+              items: { type: "string" },
+              description: "Target virtual ids; empty list means all virtuals",
+            },
+          },
+        },
+        track_text: {
+          type: "object",
+          description: "Scrolling track-text settings",
+          properties: {
+            enabled: { type: "boolean" },
+            duration: {
+              type: "number",
+              description: "Display duration in seconds (0-60)",
+            },
+            virtual_ids: { type: "array", items: { type: "string" } },
+            preset: { type: "string" },
+          },
+        },
+        album_art: {
+          type: "object",
+          description: "Album-art display settings",
+          properties: {
+            enabled: { type: "boolean" },
+            duration: {
+              type: "number",
+              description: "Display duration in seconds (0-60)",
+            },
+            virtual_ids: { type: "array", items: { type: "string" } },
+          },
+        },
+      },
+    },
+  },
 ];
 
 /**
@@ -3177,6 +3238,25 @@ export async function handleToolCall(
       case "ledfx_send_notification": {
         await client.sendNotification(args.title as string, args.text as string);
         return formatResponse({ success: true, message: "Notification sent" });
+      }
+
+      case "ledfx_get_now_playing": {
+        const state = await client.getNowPlaying();
+        return formatResponse(state);
+      }
+
+      case "ledfx_update_now_playing": {
+        const update: NowPlayingConfigUpdate = {};
+        if (args.gradient !== undefined)
+          update.gradient = args.gradient as NowPlayingConfigUpdate["gradient"];
+        if (args.track_text !== undefined)
+          update.track_text =
+            args.track_text as NowPlayingConfigUpdate["track_text"];
+        if (args.album_art !== undefined)
+          update.album_art =
+            args.album_art as NowPlayingConfigUpdate["album_art"];
+        const config = await client.updateNowPlaying(update);
+        return formatResponse({ success: true, config });
       }
 
       default:
